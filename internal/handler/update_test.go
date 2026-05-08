@@ -3,12 +3,15 @@ package handler
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func TestUpdateHandler(t *testing.T) {
 	store := &fakeMetricsStorage{}
-	h := NewUpdateHandler(store)
+	h := newTestRouter(store)
 
 	tests := []struct {
 		name       string
@@ -106,7 +109,7 @@ func TestUpdateHandler(t *testing.T) {
 
 func TestUpdateHandlerStoresGauge(t *testing.T) {
 	store := &fakeMetricsStorage{}
-	h := NewUpdateHandler(store)
+	h := newTestRouter(store)
 
 	req := httptest.NewRequest(http.MethodPost, "/update/gauge/Alloc/42.5", nil)
 	req.Header.Set("Content-Type", "text/plain")
@@ -127,7 +130,7 @@ func TestUpdateHandlerStoresGauge(t *testing.T) {
 
 func TestUpdateHandlerStoresCounter(t *testing.T) {
 	store := &fakeMetricsStorage{}
-	h := NewUpdateHandler(store)
+	h := newTestRouter(store)
 
 	req := httptest.NewRequest(http.MethodPost, "/update/counter/PollCount/7", nil)
 	req.Header.Set("Content-Type", "text/plain")
@@ -146,7 +149,99 @@ func TestUpdateHandlerStoresCounter(t *testing.T) {
 	}
 }
 
+func TestValueHandler(t *testing.T) {
+	store := &fakeMetricsStorage{}
+	store.SetGauge("Alloc", 42.5)
+	store.AddCounter("PollCount", 7)
+
+	h := newTestRouter(store)
+
+	tests := []struct {
+		name       string
+		path       string
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name:       "counter ok",
+			path:       "/value/counter/PollCount",
+			wantStatus: http.StatusOK,
+			wantBody:   "7",
+		},
+		{
+			name:       "gauge ok",
+			path:       "/value/gauge/Alloc",
+			wantStatus: http.StatusOK,
+			wantBody:   "42.5",
+		},
+		{
+			name:       "unknown metric",
+			path:       "/value/counter/Unknown",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "bad metric type",
+			path:       "/value/unknown/Alloc",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rr := httptest.NewRecorder()
+
+			h.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status: got %d, want %d", rr.Code, tt.wantStatus)
+			}
+
+			if tt.wantBody != "" && strings.TrimSpace(rr.Body.String()) != tt.wantBody {
+				t.Fatalf("body: got %q, want %q", rr.Body.String(), tt.wantBody)
+			}
+		})
+	}
+}
+
+func TestListHandler(t *testing.T) {
+	store := &fakeMetricsStorage{}
+	store.SetGauge("Alloc", 42.5)
+	store.AddCounter("PollCount", 7)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+
+	newTestRouter(store).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	body := rr.Body.String()
+	for _, want := range []string{
+		"<html>",
+		"counter PollCount: 7",
+		"gauge Alloc: 42.5",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body %q does not contain %q", body, want)
+		}
+	}
+}
+
+func newTestRouter(store *fakeMetricsStorage) http.Handler {
+	r := chi.NewRouter()
+	r.Post("/update/{type}/{name}/{value}", NewUpdateHandler(store).ServeHTTP)
+	r.Get("/value/{type}/{name}", NewValueHandler(store).ServeHTTP)
+	r.Get("/", NewListHandler(store).ServeHTTP)
+
+	return r
+}
+
 type fakeMetricsStorage struct {
+	gauges           map[string]float64
+	counters         map[string]int64
 	lastGaugeName    string
 	lastGaugeValue   float64
 	lastCounterName  string
@@ -154,11 +249,47 @@ type fakeMetricsStorage struct {
 }
 
 func (f *fakeMetricsStorage) SetGauge(name string, value float64) {
+	if f.gauges == nil {
+		f.gauges = make(map[string]float64)
+	}
+	f.gauges[name] = value
 	f.lastGaugeName = name
 	f.lastGaugeValue = value
 }
 
 func (f *fakeMetricsStorage) AddCounter(name string, delta int64) {
+	if f.counters == nil {
+		f.counters = make(map[string]int64)
+	}
+	f.counters[name] += delta
 	f.lastCounterName = name
 	f.lastCounterDelta = delta
+}
+
+func (f *fakeMetricsStorage) GetGauge(name string) (float64, bool) {
+	value, ok := f.gauges[name]
+	return value, ok
+}
+
+func (f *fakeMetricsStorage) GetCounter(name string) (int64, bool) {
+	value, ok := f.counters[name]
+	return value, ok
+}
+
+func (f *fakeMetricsStorage) ListGauges() map[string]float64 {
+	gauges := make(map[string]float64, len(f.gauges))
+	for name, value := range f.gauges {
+		gauges[name] = value
+	}
+
+	return gauges
+}
+
+func (f *fakeMetricsStorage) ListCounters() map[string]int64 {
+	counters := make(map[string]int64, len(f.counters))
+	for name, value := range f.counters {
+		counters[name] = value
+	}
+
+	return counters
 }

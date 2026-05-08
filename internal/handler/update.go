@@ -6,19 +6,18 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	models "github.com/lanefedov/metrics/internal/model"
 	"github.com/lanefedov/metrics/internal/storage"
 )
 
-const updatePrefix = "/update/"
-
 // UpdateHandler обрабатывает POST /update/{type}/{name}/{value}.
 type UpdateHandler struct {
-	store storage.MetricsStorage
+	store storage.MetricsUpdater
 }
 
 // NewUpdateHandler создаёт обработчик обновления метрик.
-func NewUpdateHandler(store storage.MetricsStorage) *UpdateHandler {
+func NewUpdateHandler(store storage.MetricsUpdater) *UpdateHandler {
 	return &UpdateHandler{store: store}
 }
 
@@ -26,11 +25,6 @@ func NewUpdateHandler(store storage.MetricsStorage) *UpdateHandler {
 func (h *UpdateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	if !strings.HasPrefix(r.URL.Path, updatePrefix) {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -42,14 +36,9 @@ func (h *UpdateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rest := strings.TrimPrefix(r.URL.Path, updatePrefix)
-	parts := strings.Split(rest, "/")
-	if len(parts) != 3 {
-		http.NotFound(w, r)
-		return
-	}
-
-	metricType, name, valueStr := parts[0], parts[1], parts[2]
+	metricType := chi.URLParam(r, "type")
+	name := chi.URLParam(r, "name")
+	valueStr := chi.URLParam(r, "value")
 	if name == "" {
 		http.NotFound(w, r)
 		return

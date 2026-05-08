@@ -14,7 +14,7 @@ type reporter interface {
 	Report(metrics []Metric) error
 }
 
-// Agent coordinates polling runtime metrics and reporting them to the server.
+// Agent координирует сбор runtime-метрик и их отправку на сервер.
 type Agent struct {
 	cfg       Config
 	collector collector
@@ -25,7 +25,7 @@ type Agent struct {
 	reportElapsed time.Duration
 }
 
-// New creates a metrics agent with the provided dependencies.
+// New создаёт агент метрик с переданными зависимостями.
 func New(cfg Config, collector collector, reporter reporter, logger *log.Logger) *Agent {
 	if cfg.ServerAddress == "" {
 		cfg.ServerAddress = defaultServerAddress
@@ -51,7 +51,7 @@ func New(cfg Config, collector collector, reporter reporter, logger *log.Logger)
 	}
 }
 
-// Run starts the infinite agent loop.
+// Run запускает бесконечный цикл работы агента.
 func (a *Agent) Run() {
 	for {
 		a.Step()
@@ -59,7 +59,7 @@ func (a *Agent) Run() {
 	}
 }
 
-// Step advances the agent state by one step interval.
+// Step продвигает состояние агента на один шаг.
 func (a *Agent) Step() {
 	a.pollElapsed += a.cfg.StepInterval
 	a.reportElapsed += a.cfg.StepInterval

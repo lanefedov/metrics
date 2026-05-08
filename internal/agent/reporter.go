@@ -12,25 +12,25 @@ type httpDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// Reporter sends metrics to the server over HTTP.
+// Reporter отправляет метрики на сервер по HTTP.
 type Reporter struct {
 	baseURL string
 	client  httpDoer
 }
 
-// NewReporter creates an HTTP reporter backed by http.Client.
+// NewReporter создаёт HTTP-отправитель метрик на базе `http.Client`.
 func NewReporter(baseURL string, client httpDoer) *Reporter {
 	if client == nil {
 		client = http.DefaultClient
 	}
 
 	return &Reporter{
-		baseURL: strings.TrimRight(baseURL, "/"),
+		baseURL: strings.TrimRight(normalizeBaseURL(baseURL), "/"),
 		client:  client,
 	}
 }
 
-// Report sends all provided metrics one-by-one.
+// Report поочерёдно отправляет все переданные метрики.
 func (r *Reporter) Report(metrics []Metric) error {
 	var reportErr error
 
@@ -70,4 +70,12 @@ func (r *Reporter) sendMetric(metric Metric) error {
 	}
 
 	return nil
+}
+
+func normalizeBaseURL(address string) string {
+	if strings.Contains(address, "://") {
+		return address
+	}
+
+	return "http://" + address
 }

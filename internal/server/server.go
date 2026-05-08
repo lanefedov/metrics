@@ -8,7 +8,7 @@ import (
 	"github.com/lanefedov/metrics/internal/storage"
 )
 
-// NewHandler builds the HTTP handler tree for the metrics server.
+// NewHandler создаёт дерево HTTP-обработчиков сервера метрик.
 func NewHandler(store storage.MetricsStorage) http.Handler {
 	r := chi.NewRouter()
 	r.Post("/update/{type}/{name}/{value}", handler.NewUpdateHandler(store).ServeHTTP)

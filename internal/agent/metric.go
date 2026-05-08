@@ -6,7 +6,7 @@ import (
 	models "github.com/lanefedov/metrics/internal/model"
 )
 
-// Metric is the internal representation used by the agent.
+// Metric описывает внутреннее представление метрики в агенте.
 type Metric struct {
 	Name         string
 	Type         string
@@ -14,7 +14,7 @@ type Metric struct {
 	CounterValue int64
 }
 
-// PathValue formats the metric value for the HTTP path.
+// PathValue форматирует значение метрики для HTTP-пути.
 func (m Metric) PathValue() string {
 	if m.Type == models.Counter {
 		return strconv.FormatInt(m.CounterValue, 10)

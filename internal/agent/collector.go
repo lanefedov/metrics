@@ -24,7 +24,7 @@ func (runtimeStatsReader) Read(stats *runtime.MemStats) {
 	runtime.ReadMemStats(stats)
 }
 
-// Collector keeps the latest runtime metrics snapshot in memory.
+// Collector хранит в памяти последний снимок runtime-метрик.
 type Collector struct {
 	reader     statsReader
 	randomFunc func() float64
@@ -34,7 +34,7 @@ type Collector struct {
 	metrics   map[string]Metric
 }
 
-// NewCollector creates the default runtime metrics collector.
+// NewCollector создаёт сборщик runtime-метрик с настройками по умолчанию.
 func NewCollector() *Collector {
 	return &Collector{
 		reader:     runtimeStatsReader{},
@@ -58,7 +58,7 @@ func newCollector(reader statsReader, randomFunc func() float64) *Collector {
 	}
 }
 
-// Collect refreshes the current metrics snapshot.
+// Collect обновляет текущий снимок метрик.
 func (c *Collector) Collect() {
 	var stats runtime.MemStats
 	c.reader.Read(&stats)
@@ -103,7 +103,7 @@ func (c *Collector) Collect() {
 	}
 }
 
-// Snapshot returns a stable copy of the latest metrics.
+// Snapshot возвращает стабильную копию последних метрик.
 func (c *Collector) Snapshot() []Metric {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

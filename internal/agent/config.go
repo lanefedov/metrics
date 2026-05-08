@@ -3,13 +3,13 @@ package agent
 import "time"
 
 const (
-	defaultServerAddress = "http://localhost:8080"
+	defaultServerAddress = "localhost:8080"
 	defaultPollInterval  = 2 * time.Second
 	defaultReportPeriod  = 10 * time.Second
 	defaultStepInterval  = time.Second
 )
 
-// Config stores the runtime settings of the metrics agent.
+// Config хранит параметры запуска агента метрик.
 type Config struct {
 	ServerAddress  string
 	PollInterval   time.Duration
@@ -17,7 +17,7 @@ type Config struct {
 	StepInterval   time.Duration
 }
 
-// DefaultConfig returns the task defaults for the HTTP agent.
+// DefaultConfig возвращает значения по умолчанию для HTTP-агента.
 func DefaultConfig() Config {
 	return Config{
 		ServerAddress:  defaultServerAddress,

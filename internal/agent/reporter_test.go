@@ -87,6 +87,28 @@ func TestReporterReportReturnsStatusError(t *testing.T) {
 	}
 }
 
+func TestReporterAcceptsAddressWithoutScheme(t *testing.T) {
+	var gotHost string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHost = r.Host
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	reporter := NewReporter(server.Listener.Addr().String(), server.Client())
+
+	err := reporter.Report([]Metric{
+		{Name: "Alloc", Type: models.Gauge, GaugeValue: 1.5},
+	})
+	if err != nil {
+		t.Fatalf("report metrics: %v", err)
+	}
+	if gotHost != server.Listener.Addr().String() {
+		t.Fatalf("host: got %q, want %q", gotHost, server.Listener.Addr().String())
+	}
+}
+
 type roundTripperFunc func(req *http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) Do(req *http.Request) (*http.Response, error) {

@@ -1,6 +1,6 @@
 package storage
 
-// MetricsUpdater описывает операции обновления метрик в памяти.
+// MetricsUpdater описывает операции обновления метрик.
 type MetricsUpdater interface {
 	SetGauge(name string, value float64)
 	AddCounter(name string, delta int64)
@@ -25,13 +25,13 @@ type MetricsStorage interface {
 	MetricsLister
 }
 
-// MemStorage хранит gauge и counter в памяти.
+// MemStorage хранит метрики типов gauge и counter в памяти.
 type MemStorage struct {
 	counters map[string]int64
 	gauges   map[string]float64
 }
 
-// NewMemStorage создаёт пустое in-memory-хранилище.
+// NewMemStorage создаёт пустое хранилище в памяти.
 func NewMemStorage() *MemStorage {
 	return &MemStorage{
 		counters: make(map[string]int64),
@@ -39,23 +39,23 @@ func NewMemStorage() *MemStorage {
 	}
 }
 
-// SetGauge устанавливает значение gauge.
+// SetGauge устанавливает значение метрики типа gauge.
 func (m *MemStorage) SetGauge(name string, value float64) {
 	m.gauges[name] = value
 }
 
-// AddCounter добавляет delta к накопленному counter.
+// AddCounter добавляет delta к накопленному значению counter.
 func (m *MemStorage) AddCounter(name string, delta int64) {
 	m.counters[name] += delta
 }
 
-// GetGauge возвращает текущее значение gauge и факт его существования.
+// GetGauge возвращает текущее значение gauge и признак его существования.
 func (m *MemStorage) GetGauge(name string) (float64, bool) {
 	value, ok := m.gauges[name]
 	return value, ok
 }
 
-// GetCounter возвращает текущее значение counter и факт его существования.
+// GetCounter возвращает текущее значение counter и признак его существования.
 func (m *MemStorage) GetCounter(name string) (int64, bool) {
 	value, ok := m.counters[name]
 	return value, ok

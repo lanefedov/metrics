@@ -4,12 +4,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/lanefedov/metrics/internal/storage"
 )
 
 func TestUpdateHandler(t *testing.T) {
-	store := storage.NewMemStorage()
+	store := &fakeMetricsStorage{}
 	h := NewUpdateHandler(store)
 
 	tests := []struct {
@@ -104,4 +102,63 @@ func TestUpdateHandler(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateHandlerStoresGauge(t *testing.T) {
+	store := &fakeMetricsStorage{}
+	h := NewUpdateHandler(store)
+
+	req := httptest.NewRequest(http.MethodPost, "/update/gauge/Alloc/42.5", nil)
+	req.Header.Set("Content-Type", "text/plain")
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", rr.Code, http.StatusOK)
+	}
+	if store.lastGaugeName != "Alloc" {
+		t.Fatalf("gauge name: got %q, want %q", store.lastGaugeName, "Alloc")
+	}
+	if store.lastGaugeValue != 42.5 {
+		t.Fatalf("gauge value: got %v, want %v", store.lastGaugeValue, 42.5)
+	}
+}
+
+func TestUpdateHandlerStoresCounter(t *testing.T) {
+	store := &fakeMetricsStorage{}
+	h := NewUpdateHandler(store)
+
+	req := httptest.NewRequest(http.MethodPost, "/update/counter/PollCount/7", nil)
+	req.Header.Set("Content-Type", "text/plain")
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", rr.Code, http.StatusOK)
+	}
+	if store.lastCounterName != "PollCount" {
+		t.Fatalf("counter name: got %q, want %q", store.lastCounterName, "PollCount")
+	}
+	if store.lastCounterDelta != 7 {
+		t.Fatalf("counter delta: got %d, want %d", store.lastCounterDelta, 7)
+	}
+}
+
+type fakeMetricsStorage struct {
+	lastGaugeName    string
+	lastGaugeValue   float64
+	lastCounterName  string
+	lastCounterDelta int64
+}
+
+func (f *fakeMetricsStorage) SetGauge(name string, value float64) {
+	f.lastGaugeName = name
+	f.lastGaugeValue = value
+}
+
+func (f *fakeMetricsStorage) AddCounter(name string, delta int64) {
+	f.lastCounterName = name
+	f.lastCounterDelta = delta
 }

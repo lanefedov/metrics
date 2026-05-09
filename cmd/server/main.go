@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	cfg, err := parseServerFlags(os.Args[1:])
+	cfg, err := loadServerConfig(os.Args[1:])
 	if err != nil {
 		log.Fatal(err)
 	}

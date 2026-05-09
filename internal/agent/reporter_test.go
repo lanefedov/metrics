@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,17 +16,29 @@ import (
 func TestReporterReportSendsMetrics(t *testing.T) {
 	var gotMethods []string
 	var gotContentTypes []string
+	var gotContentEncodings []string
 	var gotPaths []string
 	var gotBodies []models.Metrics
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethods = append(gotMethods, r.Method)
 		gotContentTypes = append(gotContentTypes, r.Header.Get("Content-Type"))
+		gotContentEncodings = append(gotContentEncodings, r.Header.Get("Content-Encoding"))
 		gotPaths = append(gotPaths, r.URL.Path)
+
+		reader, err := gzip.NewReader(r.Body)
+		if err != nil {
+			t.Fatalf("new gzip reader: %v", err)
+		}
+
 		var metric models.Metrics
-		if err := json.NewDecoder(r.Body).Decode(&metric); err != nil {
+		if err := json.NewDecoder(reader).Decode(&metric); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
+		if err := reader.Close(); err != nil {
+			t.Fatalf("close gzip reader: %v", err)
+		}
+
 		gotBodies = append(gotBodies, metric)
 		_, _ = io.WriteString(w, "OK")
 	}))
@@ -49,6 +62,11 @@ func TestReporterReportSendsMetrics(t *testing.T) {
 	wantContentTypes := []string{"application/json", "application/json"}
 	if !reflect.DeepEqual(gotContentTypes, wantContentTypes) {
 		t.Fatalf("content types: got %v, want %v", gotContentTypes, wantContentTypes)
+	}
+
+	wantContentEncodings := []string{"gzip", "gzip"}
+	if !reflect.DeepEqual(gotContentEncodings, wantContentEncodings) {
+		t.Fatalf("content encodings: got %v, want %v", gotContentEncodings, wantContentEncodings)
 	}
 
 	wantPaths := []string{

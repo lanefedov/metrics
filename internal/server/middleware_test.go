@@ -3,9 +3,12 @@ package server
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -70,4 +73,165 @@ func TestLoggingMiddlewareLogsRequestAndResponse(t *testing.T) {
 	if got := responseLog["size"]; got != float64(len("hello")) {
 		t.Fatalf("response size: got %v, want %d", got, len("hello"))
 	}
+}
+
+func TestRequestDecompressionMiddlewareDecompressesGzipBody(t *testing.T) {
+	const wantBody = `{"id":"Alloc","type":"gauge","value":123.45}`
+
+	var gotBody string
+	var gotEncoding string
+	handler := requestDecompressionMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+
+		gotBody = string(body)
+		gotEncoding = r.Header.Get("Content-Encoding")
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/update", bytes.NewReader(gzipBytes(t, wantBody)))
+	req.Header.Set("Content-Encoding", "gzip")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", rr.Code, http.StatusOK)
+	}
+	if gotBody != wantBody {
+		t.Fatalf("body: got %q, want %q", gotBody, wantBody)
+	}
+	if gotEncoding != "" {
+		t.Fatalf("content encoding: got %q, want empty", gotEncoding)
+	}
+}
+
+func TestRequestDecompressionMiddlewareRejectsBrokenGzip(t *testing.T) {
+	called := false
+	handler := requestDecompressionMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/update", strings.NewReader("not a gzip stream"))
+	req.Header.Set("Content-Encoding", "gzip")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+	if called {
+		t.Fatal("handler should not be called for broken gzip")
+	}
+}
+
+func TestResponseCompressionMiddlewareCompressesEligibleResponses(t *testing.T) {
+	testCases := []struct {
+		name        string
+		contentType string
+		body        string
+	}{
+		{
+			name:        "json",
+			contentType: "application/json",
+			body:        `{"status":"ok"}`,
+		},
+		{
+			name:        "html",
+			contentType: "text/html; charset=utf-8",
+			body:        "<html><body>ok</body></html>",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := responseCompressionMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Accept-Encoding", "gzip")
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status: got %d, want %d", rr.Code, http.StatusOK)
+			}
+			if got := rr.Header().Get("Content-Encoding"); got != "gzip" {
+				t.Fatalf("content encoding: got %q, want %q", got, "gzip")
+			}
+			if got := rr.Header().Get("Vary"); got != "Accept-Encoding" {
+				t.Fatalf("vary: got %q, want %q", got, "Accept-Encoding")
+			}
+
+			gotBody := gunzipString(t, rr.Body.Bytes())
+			if gotBody != tc.body {
+				t.Fatalf("body: got %q, want %q", gotBody, tc.body)
+			}
+		})
+	}
+}
+
+func TestResponseCompressionMiddlewareSkipsUnsupportedContentType(t *testing.T) {
+	const wantBody = "plain text response"
+
+	handler := responseCompressionMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(wantBody))
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/value/gauge/test", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", rr.Code, http.StatusOK)
+	}
+	if got := rr.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("content encoding: got %q, want empty", got)
+	}
+	if got := rr.Body.String(); got != wantBody {
+		t.Fatalf("body: got %q, want %q", got, wantBody)
+	}
+}
+
+func gzipBytes(t *testing.T, value string) []byte {
+	t.Helper()
+
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	if _, err := writer.Write([]byte(value)); err != nil {
+		t.Fatalf("write gzip body: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close gzip writer: %v", err)
+	}
+
+	return buffer.Bytes()
+}
+
+func gunzipString(t *testing.T, data []byte) string {
+	t.Helper()
+
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("new gzip reader: %v", err)
+	}
+	defer reader.Close()
+
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read gzip body: %v", err)
+	}
+
+	return string(body)
 }

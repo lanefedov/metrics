@@ -18,6 +18,8 @@ func NewHandler(store storage.MetricsStorage) http.Handler {
 	metricsService := service.NewMetricsService(store)
 
 	r.Use(loggingMiddleware(logger))
+	r.Use(requestDecompressionMiddleware)
+	r.Use(responseCompressionMiddleware)
 	r.Post("/update", handler.NewJSONUpdateHandler(metricsService).ServeHTTP)
 	r.Post("/update/", handler.NewJSONUpdateHandler(metricsService).ServeHTTP)
 	r.Post("/update/{type}/{name}/{value}", handler.NewUpdateHandler(metricsService).ServeHTTP)

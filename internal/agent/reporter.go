@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,11 +54,17 @@ func (r *Reporter) sendMetric(metric Metric) error {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/update/", r.baseURL), bytes.NewReader(body))
+	compressedBody, err := gzipData(body)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/update/", r.baseURL), bytes.NewReader(compressedBody))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -97,4 +104,18 @@ func normalizeBaseURL(address string) string {
 	}
 
 	return "http://" + address
+}
+
+func gzipData(data []byte) ([]byte, error) {
+	var buffer bytes.Buffer
+	gzipWriter := gzip.NewWriter(&buffer)
+	if _, err := gzipWriter.Write(data); err != nil {
+		_ = gzipWriter.Close()
+		return nil, err
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return nil, err
+	}
+
+	return buffer.Bytes(), nil
 }

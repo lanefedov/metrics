@@ -1,12 +1,15 @@
 package agent
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
+
+	models "github.com/lanefedov/metrics/internal/model"
 )
 
 type httpDoer interface {
@@ -45,19 +48,16 @@ func (r *Reporter) Report(metrics []Metric) error {
 }
 
 func (r *Reporter) sendMetric(metric Metric) error {
-	path := fmt.Sprintf(
-		"%s/update/%s/%s/%s",
-		r.baseURL,
-		metric.Type,
-		url.PathEscape(metric.Name),
-		url.PathEscape(metric.PathValue()),
-	)
-
-	req, err := http.NewRequest(http.MethodPost, path, nil)
+	body, err := json.Marshal(metricToModel(metric))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "text/plain")
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/update/", r.baseURL), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -71,6 +71,24 @@ func (r *Reporter) sendMetric(metric Metric) error {
 	}
 
 	return nil
+}
+
+func metricToModel(metric Metric) models.Metrics {
+	requestMetric := models.Metrics{
+		ID:    metric.Name,
+		MType: metric.Type,
+	}
+
+	switch metric.Type {
+	case models.Counter:
+		delta := metric.CounterValue
+		requestMetric.Delta = &delta
+	case models.Gauge:
+		value := metric.GaugeValue
+		requestMetric.Value = &value
+	}
+
+	return requestMetric
 }
 
 func normalizeBaseURL(address string) string {

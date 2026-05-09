@@ -1,24 +1,23 @@
 package handler
 
 import (
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	models "github.com/lanefedov/metrics/internal/model"
-	"github.com/lanefedov/metrics/internal/storage"
+	"github.com/lanefedov/metrics/internal/service"
 )
 
 // UpdateHandler обрабатывает POST /update/{type}/{name}/{value}.
 type UpdateHandler struct {
-	store storage.MetricsUpdater
+	service *service.MetricsService
 }
 
 // NewUpdateHandler создаёт обработчик обновления метрик.
-func NewUpdateHandler(store storage.MetricsUpdater) *UpdateHandler {
-	return &UpdateHandler{store: store}
+func NewUpdateHandler(metricsService *service.MetricsService) *UpdateHandler {
+	return &UpdateHandler{service: metricsService}
 }
 
 // ServeHTTP реализует net/http.Handler.
@@ -44,6 +43,11 @@ func (h *UpdateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	metric := models.Metrics{
+		ID:    name,
+		MType: metricType,
+	}
+
 	switch metricType {
 	case models.Counter:
 		v, err := strconv.ParseInt(valueStr, 10, 64)
@@ -51,15 +55,20 @@ func (h *UpdateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		h.store.AddCounter(name, v)
+		metric.Delta = &v
 	case models.Gauge:
 		v, err := strconv.ParseFloat(valueStr, 64)
-		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		h.store.SetGauge(name, v)
+		metric.Value = &v
 	default:
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if err := h.service.UpdateMetric(metric); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}

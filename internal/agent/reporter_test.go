@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -15,11 +16,17 @@ func TestReporterReportSendsMetrics(t *testing.T) {
 	var gotMethods []string
 	var gotContentTypes []string
 	var gotPaths []string
+	var gotBodies []models.Metrics
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethods = append(gotMethods, r.Method)
 		gotContentTypes = append(gotContentTypes, r.Header.Get("Content-Type"))
 		gotPaths = append(gotPaths, r.URL.Path)
+		var metric models.Metrics
+		if err := json.NewDecoder(r.Body).Decode(&metric); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		gotBodies = append(gotBodies, metric)
 		_, _ = io.WriteString(w, "OK")
 	}))
 	defer server.Close()
@@ -39,17 +46,33 @@ func TestReporterReportSendsMetrics(t *testing.T) {
 		t.Fatalf("methods: got %v, want %v", gotMethods, wantMethods)
 	}
 
-	wantContentTypes := []string{"text/plain", "text/plain"}
+	wantContentTypes := []string{"application/json", "application/json"}
 	if !reflect.DeepEqual(gotContentTypes, wantContentTypes) {
 		t.Fatalf("content types: got %v, want %v", gotContentTypes, wantContentTypes)
 	}
 
 	wantPaths := []string{
-		"/update/counter/PollCount/7",
-		"/update/gauge/RandomValue/42.5",
+		"/update/",
+		"/update/",
 	}
 	if !reflect.DeepEqual(gotPaths, wantPaths) {
 		t.Fatalf("paths: got %v, want %v", gotPaths, wantPaths)
+	}
+
+	wantBodies := []models.Metrics{
+		{
+			ID:    "PollCount",
+			MType: models.Counter,
+			Delta: int64Ptr(7),
+		},
+		{
+			ID:    "RandomValue",
+			MType: models.Gauge,
+			Value: float64Ptr(42.5),
+		},
+	}
+	if !reflect.DeepEqual(gotBodies, wantBodies) {
+		t.Fatalf("bodies: got %#v, want %#v", gotBodies, wantBodies)
 	}
 }
 
@@ -148,4 +171,12 @@ type assertiveError string
 
 func (e assertiveError) Error() string {
 	return string(e)
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
+}
+
+func float64Ptr(v float64) *float64 {
+	return &v
 }

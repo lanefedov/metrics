@@ -101,3 +101,11 @@ func (m *MemStorage) ListCounters() map[string]int64 {
 
 	return counters
 }
+
+func (m *MemStorage) replaceAll(counters map[string]int64, gauges map[string]float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.counters = counters
+	m.gauges = gauges
+}

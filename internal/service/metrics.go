@@ -19,12 +19,21 @@ var (
 
 // MetricsService содержит бизнес-логику работы с метриками.
 type MetricsService struct {
-	store storage.MetricsStorage
+	store       storage.MetricsStorage
+	afterUpdate func() error
 }
 
 // NewMetricsService создаёт сервис метрик.
 func NewMetricsService(store storage.MetricsStorage) *MetricsService {
 	return &MetricsService{store: store}
+}
+
+// NewMetricsServiceWithAfterUpdate создаёт сервис метрик с колбэком после обновления.
+func NewMetricsServiceWithAfterUpdate(store storage.MetricsStorage, afterUpdate func() error) *MetricsService {
+	return &MetricsService{
+		store:       store,
+		afterUpdate: afterUpdate,
+	}
 }
 
 // UpdateMetric валидирует и сохраняет метрику.
@@ -39,7 +48,6 @@ func (s *MetricsService) UpdateMetric(metric models.Metrics) error {
 			return invalidMetric("counter delta is required")
 		}
 		s.store.AddCounter(metric.ID, *metric.Delta)
-		return nil
 	case models.Gauge:
 		if metric.Value == nil {
 			return invalidMetric("gauge value is required")
@@ -48,10 +56,17 @@ func (s *MetricsService) UpdateMetric(metric models.Metrics) error {
 			return invalidMetric("gauge value must be finite")
 		}
 		s.store.SetGauge(metric.ID, *metric.Value)
-		return nil
 	default:
 		return invalidMetric("unsupported metric type")
 	}
+
+	if s.afterUpdate != nil {
+		if err := s.afterUpdate(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // GetMetric возвращает актуальное значение метрики.

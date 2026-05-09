@@ -7,15 +7,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lanefedov/metrics/internal/handler"
 	"github.com/lanefedov/metrics/internal/service"
-	"github.com/lanefedov/metrics/internal/storage"
 	"github.com/rs/zerolog"
 )
 
 // NewHandler создаёт дерево HTTP-обработчиков сервера метрик.
-func NewHandler(store storage.MetricsStorage) http.Handler {
+func NewHandler(metricsService *service.MetricsService) http.Handler {
 	r := chi.NewRouter()
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
-	metricsService := service.NewMetricsService(store)
 
 	r.Use(loggingMiddleware(logger))
 	r.Use(requestDecompressionMiddleware)

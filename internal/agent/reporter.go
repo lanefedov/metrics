@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,7 +37,7 @@ func (r *Reporter) Report(metrics []Metric) error {
 
 	for _, metric := range metrics {
 		if err := r.sendMetric(metric); err != nil {
-			reportErr = err
+			reportErr = errors.Join(reportErr, err)
 		}
 	}
 

@@ -39,7 +39,7 @@ func TestCollectorCollectsAllRequiredMetrics(t *testing.T) {
 			TotalAlloc:    27,
 		},
 	}
-	collector := newCollector(reader, func() float64 { return 99.9 })
+	collector := NewCollector(reader, func() float64 { return 99.9 })
 
 	collector.Collect()
 
@@ -87,7 +87,7 @@ func TestCollectorIncrementsPollCountAndUpdatesRandomValue(t *testing.T) {
 	reader := fakeStatsReader{}
 	randomValues := []float64{1.25, 2.5}
 	nextRandom := 0
-	collector := newCollector(reader, func() float64 {
+	collector := NewCollector(reader, func() float64 {
 		value := randomValues[nextRandom]
 		nextRandom++
 		return value

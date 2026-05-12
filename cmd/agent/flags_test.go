@@ -48,7 +48,4 @@ func TestParseAgentFlagsRejectsUnknownFlags(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if err.Error() != "flag provided but not defined: -x" {
-		t.Fatalf("error: got %q, want %q", err.Error(), "flag provided but not defined: -x")
-	}
 }

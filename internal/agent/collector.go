@@ -34,16 +34,8 @@ type Collector struct {
 	metrics   map[string]Metric
 }
 
-// NewCollector создаёт сборщик runtime-метрик с настройками по умолчанию.
-func NewCollector() *Collector {
-	return &Collector{
-		reader:     runtimeStatsReader{},
-		randomFunc: rand.Float64,
-		metrics:    make(map[string]Metric),
-	}
-}
-
-func newCollector(reader statsReader, randomFunc func() float64) *Collector {
+// NewCollector создаёт сборщик runtime-метрик.
+func NewCollector(reader statsReader, randomFunc func() float64) *Collector {
 	if reader == nil {
 		reader = runtimeStatsReader{}
 	}

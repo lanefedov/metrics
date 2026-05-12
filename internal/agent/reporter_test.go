@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -106,6 +107,34 @@ func TestReporterAcceptsAddressWithoutScheme(t *testing.T) {
 	}
 	if gotHost != server.Listener.Addr().String() {
 		t.Fatalf("host: got %q, want %q", gotHost, server.Listener.Addr().String())
+	}
+}
+
+func TestReporterReportJoinsMultipleErrors(t *testing.T) {
+	firstErr := assertiveError("transport failed 1")
+	secondErr := assertiveError("transport failed 2")
+	callNumber := 0
+
+	reporter := NewReporter("http://localhost:8080", roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		callNumber++
+		if callNumber == 1 {
+			return nil, firstErr
+		}
+		return nil, secondErr
+	}))
+
+	err := reporter.Report([]Metric{
+		{Name: "PollCount", Type: models.Counter, CounterValue: 1},
+		{Name: "Alloc", Type: models.Gauge, GaugeValue: 1.5},
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, firstErr) {
+		t.Fatalf("expected joined error to include %q, got %v", firstErr, err)
+	}
+	if !errors.Is(err, secondErr) {
+		t.Fatalf("expected joined error to include %q, got %v", secondErr, err)
 	}
 }
 

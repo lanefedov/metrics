@@ -13,7 +13,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	collector := agent.NewCollector()
+	collector := agent.NewCollector(nil, nil)
 	reporter := agent.NewReporter(cfg.ServerAddress, nil)
 	app := agent.New(cfg, collector, reporter, log.Default())
 

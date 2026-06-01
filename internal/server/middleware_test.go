@@ -226,7 +226,11 @@ func gunzipString(t *testing.T, data []byte) string {
 	if err != nil {
 		t.Fatalf("new gzip reader: %v", err)
 	}
-	defer reader.Close()
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Fatalf("close gzip reader: %v", err)
+		}
+	}()
 
 	body, err := io.ReadAll(reader)
 	if err != nil {

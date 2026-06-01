@@ -42,8 +42,12 @@ func main() {
 
 	h := server.NewHandler(metricsService)
 	httpServer := &http.Server{
-		Addr:    cfg.address,
-		Handler: h,
+		Addr:              cfg.address,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {

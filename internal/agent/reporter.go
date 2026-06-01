@@ -6,32 +6,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 
+	"github.com/go-resty/resty/v2"
 	models "github.com/lanefedov/metrics/internal/model"
 )
 
-type httpDoer interface {
-	Do(req *http.Request) (*http.Response, error)
-}
-
 // Reporter отправляет метрики на сервер по HTTP.
 type Reporter struct {
-	baseURL string
-	client  httpDoer
+	client *resty.Client
 }
 
-// NewReporter создаёт HTTP-отправитель метрик на базе `http.Client`.
-func NewReporter(baseURL string, client httpDoer) *Reporter {
+// NewReporter создаёт HTTP-отправитель метрик на базе resty-клиента.
+func NewReporter(baseURL string, client *resty.Client) *Reporter {
 	if client == nil {
-		client = http.DefaultClient
+		client = resty.New()
 	}
 
 	return &Reporter{
-		baseURL: strings.TrimRight(normalizeBaseURL(baseURL), "/"),
-		client:  client,
+		client: client.SetBaseURL(strings.TrimRight(normalizeBaseURL(baseURL), "/")),
 	}
 }
 
@@ -59,22 +52,17 @@ func (r *Reporter) sendMetric(metric Metric) error {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/update/", r.baseURL), bytes.NewReader(compressedBody))
+	resp, err := r.client.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("Content-Encoding", "gzip").
+		SetBody(compressedBody).
+		Post("/update/")
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Content-Encoding", "gzip")
 
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode())
 	}
 
 	return nil

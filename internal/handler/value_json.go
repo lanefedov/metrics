@@ -47,5 +47,5 @@ func (h *JSONValueHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeMetricJSON(w, http.StatusOK, responseMetric)
+	writeMetricJSON(w, http.StatusOK, *responseMetric)
 }

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/go-resty/resty/v2"
 	models "github.com/lanefedov/metrics/internal/model"
 )
 
@@ -44,7 +45,7 @@ func TestReporterReportSendsMetrics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	reporter := NewReporter(server.URL, server.Client())
+	reporter := NewReporter(server.URL, resty.NewWithClient(server.Client()))
 	metrics := []Metric{
 		{Name: "PollCount", Type: models.Counter, CounterValue: 7},
 		{Name: "RandomValue", Type: models.Gauge, GaugeValue: 42.5},
@@ -95,8 +96,11 @@ func TestReporterReportSendsMetrics(t *testing.T) {
 }
 
 func TestReporterReportReturnsTransportError(t *testing.T) {
-	reporter := NewReporter("http://localhost:8080", roundTripperFunc(func(*http.Request) (*http.Response, error) {
-		return nil, assertiveError("transport failed")
+	transportErr := assertiveError("transport failed")
+	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return nil, transportErr
+		}),
 	}))
 
 	err := reporter.Report([]Metric{
@@ -105,17 +109,20 @@ func TestReporterReportReturnsTransportError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if err.Error() != "transport failed" {
-		t.Fatalf("error: got %q, want %q", err.Error(), "transport failed")
+	if !errors.Is(err, transportErr) {
+		t.Fatalf("expected error to include %q, got %v", transportErr, err)
 	}
 }
 
 func TestReporterReportReturnsStatusError(t *testing.T) {
-	reporter := NewReporter("http://localhost:8080", roundTripperFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusBadRequest,
-			Body:       io.NopCloser(http.NoBody),
-		}, nil
+	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(http.NoBody),
+				Header:     make(http.Header),
+			}, nil
+		}),
 	}))
 
 	err := reporter.Report([]Metric{
@@ -138,7 +145,7 @@ func TestReporterAcceptsAddressWithoutScheme(t *testing.T) {
 	}))
 	defer server.Close()
 
-	reporter := NewReporter(server.Listener.Addr().String(), server.Client())
+	reporter := NewReporter(server.Listener.Addr().String(), resty.NewWithClient(server.Client()))
 
 	err := reporter.Report([]Metric{
 		{Name: "Alloc", Type: models.Gauge, GaugeValue: 1.5},
@@ -156,12 +163,14 @@ func TestReporterReportJoinsMultipleErrors(t *testing.T) {
 	secondErr := assertiveError("transport failed 2")
 	callNumber := 0
 
-	reporter := NewReporter("http://localhost:8080", roundTripperFunc(func(*http.Request) (*http.Response, error) {
-		callNumber++
-		if callNumber == 1 {
-			return nil, firstErr
-		}
-		return nil, secondErr
+	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			callNumber++
+			if callNumber == 1 {
+				return nil, firstErr
+			}
+			return nil, secondErr
+		}),
 	}))
 
 	err := reporter.Report([]Metric{
@@ -181,7 +190,7 @@ func TestReporterReportJoinsMultipleErrors(t *testing.T) {
 
 type roundTripperFunc func(req *http.Request) (*http.Response, error)
 
-func (f roundTripperFunc) Do(req *http.Request) (*http.Response, error) {
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 

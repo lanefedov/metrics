@@ -70,19 +70,19 @@ func (s *MetricsService) UpdateMetric(metric models.Metrics) error {
 }
 
 // GetMetric возвращает актуальное значение метрики.
-func (s *MetricsService) GetMetric(metric models.Metrics) (models.Metrics, error) {
+func (s *MetricsService) GetMetric(metric models.Metrics) (*models.Metrics, error) {
 	if metric.ID == "" {
-		return models.Metrics{}, invalidMetric("metric id is required")
+		return nil, invalidMetric("metric id is required")
 	}
 
 	switch metric.MType {
 	case models.Counter:
 		value, ok := s.store.GetCounter(metric.ID)
 		if !ok {
-			return models.Metrics{}, ErrMetricNotFound
+			return nil, ErrMetricNotFound
 		}
 
-		return models.Metrics{
+		return &models.Metrics{
 			ID:    metric.ID,
 			MType: metric.MType,
 			Delta: &value,
@@ -90,16 +90,16 @@ func (s *MetricsService) GetMetric(metric models.Metrics) (models.Metrics, error
 	case models.Gauge:
 		value, ok := s.store.GetGauge(metric.ID)
 		if !ok {
-			return models.Metrics{}, ErrMetricNotFound
+			return nil, ErrMetricNotFound
 		}
 
-		return models.Metrics{
+		return &models.Metrics{
 			ID:    metric.ID,
 			MType: metric.MType,
 			Value: &value,
 		}, nil
 	default:
-		return models.Metrics{}, invalidMetric("unsupported metric type")
+		return nil, invalidMetric("unsupported metric type")
 	}
 }
 

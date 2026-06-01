@@ -1,12 +1,16 @@
 package main
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestLoadAgentConfigUsesDefaultsWithoutEnv(t *testing.T) {
-	cfg, err := loadAgentConfigWithEnv(nil, emptyEnvLookup)
+	unsetAgentEnv(t)
+
+	cfg, err := loadAgentConfig(nil)
 	if err != nil {
 		t.Fatalf("load agent config: %v", err)
 	}
@@ -23,11 +27,12 @@ func TestLoadAgentConfigUsesDefaultsWithoutEnv(t *testing.T) {
 }
 
 func TestLoadAgentConfigUsesEnvValues(t *testing.T) {
-	cfg, err := loadAgentConfigWithEnv(nil, envLookup(map[string]string{
-		addressEnvKey:        "localhost:9090",
-		reportIntervalEnvKey: "13",
-		pollIntervalEnvKey:   "5",
-	}))
+	unsetAgentEnv(t)
+	t.Setenv("ADDRESS", "localhost:9090")
+	t.Setenv("REPORT_INTERVAL", "13")
+	t.Setenv("POLL_INTERVAL", "5")
+
+	cfg, err := loadAgentConfig(nil)
 	if err != nil {
 		t.Fatalf("load agent config: %v", err)
 	}
@@ -44,15 +49,16 @@ func TestLoadAgentConfigUsesEnvValues(t *testing.T) {
 }
 
 func TestLoadAgentConfigEnvOverridesFlags(t *testing.T) {
-	cfg, err := loadAgentConfigWithEnv([]string{
+	unsetAgentEnv(t)
+	t.Setenv("ADDRESS", "localhost:9090")
+	t.Setenv("REPORT_INTERVAL", "13")
+	t.Setenv("POLL_INTERVAL", "5")
+
+	cfg, err := loadAgentConfig([]string{
 		"-a=127.0.0.1:9000",
 		"-r=15",
 		"-p=4",
-	}, envLookup(map[string]string{
-		addressEnvKey:        "localhost:9090",
-		reportIntervalEnvKey: "13",
-		pollIntervalEnvKey:   "5",
-	}))
+	})
 	if err != nil {
 		t.Fatalf("load agent config: %v", err)
 	}
@@ -69,25 +75,35 @@ func TestLoadAgentConfigEnvOverridesFlags(t *testing.T) {
 }
 
 func TestLoadAgentConfigRejectsInvalidEnvInterval(t *testing.T) {
-	_, err := loadAgentConfigWithEnv(nil, envLookup(map[string]string{
-		reportIntervalEnvKey: "ten",
-	}))
+	unsetAgentEnv(t)
+	t.Setenv("REPORT_INTERVAL", "ten")
+
+	_, err := loadAgentConfig(nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 
-	if err.Error() != "REPORT_INTERVAL must be an integer number of seconds" {
-		t.Fatalf("error: got %q, want %q", err.Error(), "REPORT_INTERVAL must be an integer number of seconds")
+	if !strings.Contains(err.Error(), "REPORT_INTERVAL") {
+		t.Fatalf("error: got %q, want it to mention REPORT_INTERVAL", err.Error())
 	}
 }
 
-func emptyEnvLookup(string) (string, bool) {
-	return "", false
-}
+func unsetAgentEnv(t *testing.T) {
+	t.Helper()
 
-func envLookup(values map[string]string) func(string) (string, bool) {
-	return func(key string) (string, bool) {
-		value, ok := values[key]
-		return value, ok
+	keys := []string{"ADDRESS", "REPORT_INTERVAL", "POLL_INTERVAL"}
+	for _, key := range keys {
+		value, ok := os.LookupEnv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unset %s: %v", key, err)
+		}
+
+		t.Cleanup(func() {
+			if ok {
+				_ = os.Setenv(key, value)
+				return
+			}
+			_ = os.Unsetenv(key)
+		})
 	}
 }

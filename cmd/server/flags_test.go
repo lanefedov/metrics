@@ -11,6 +11,9 @@ func TestParseServerFlagsUsesDefaults(t *testing.T) {
 	if cfg.address != defaultListenAddress {
 		t.Fatalf("address: got %q, want %q", cfg.address, defaultListenAddress)
 	}
+	if cfg.databaseDSN != "" {
+		t.Fatalf("database dsn: got %q, want empty", cfg.databaseDSN)
+	}
 }
 
 func TestParseServerFlagsOverridesAddress(t *testing.T) {
@@ -21,6 +24,19 @@ func TestParseServerFlagsOverridesAddress(t *testing.T) {
 
 	if cfg.address != "127.0.0.1:9000" {
 		t.Fatalf("address: got %q, want %q", cfg.address, "127.0.0.1:9000")
+	}
+}
+
+func TestParseServerFlagsOverridesDatabaseDSN(t *testing.T) {
+	const dsn = "host=localhost port=5432 user=test dbname=metrics sslmode=disable"
+
+	cfg, err := parseServerFlags([]string{"-d=" + dsn})
+	if err != nil {
+		t.Fatalf("parse server flags: %v", err)
+	}
+
+	if cfg.databaseDSN != dsn {
+		t.Fatalf("database dsn: got %q, want %q", cfg.databaseDSN, dsn)
 	}
 }
 

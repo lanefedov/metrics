@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lanefedov/metrics/internal/server"
 	"github.com/lanefedov/metrics/internal/service"
 	"github.com/lanefedov/metrics/internal/storage"
@@ -19,6 +20,17 @@ func main() {
 	cfg, err := loadServerConfig(os.Args[1:])
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	var databasePing func(context.Context) error
+	if cfg.databaseDSN != "" {
+		pool, err := pgxpool.New(context.Background(), cfg.databaseDSN)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer pool.Close()
+
+		databasePing = pool.Ping
 	}
 
 	store := storage.NewMemStorage()
@@ -40,7 +52,7 @@ func main() {
 		startPeriodicSave(ctx, store, cfg.fileStoragePath, cfg.storeInterval)
 	}
 
-	h := server.NewHandler(metricsService)
+	h := server.NewHandler(metricsService, databasePing)
 	httpServer := &http.Server{
 		Addr:              cfg.address,
 		Handler:           h,

@@ -39,6 +39,37 @@ func NewMetricsServiceWithAfterUpdate(store storage.MetricsStorage, afterUpdate 
 
 // UpdateMetric валидирует и сохраняет метрику.
 func (s *MetricsService) UpdateMetric(ctx context.Context, metric models.Metrics) error {
+	if err := validateMetric(metric); err != nil {
+		return err
+	}
+
+	if err := s.store.UpdateMetrics(ctx, []models.Metrics{metric}); err != nil {
+		return err
+	}
+
+	return s.runAfterUpdate()
+}
+
+// UpdateMetrics валидирует и сохраняет набор метрик.
+func (s *MetricsService) UpdateMetrics(ctx context.Context, metrics []models.Metrics) error {
+	if len(metrics) == 0 {
+		return nil
+	}
+
+	for _, metric := range metrics {
+		if err := validateMetric(metric); err != nil {
+			return err
+		}
+	}
+
+	if err := s.store.UpdateMetrics(ctx, metrics); err != nil {
+		return err
+	}
+
+	return s.runAfterUpdate()
+}
+
+func validateMetric(metric models.Metrics) error {
 	if metric.ID == "" {
 		return invalidMetric("metric id is required")
 	}
@@ -48,9 +79,6 @@ func (s *MetricsService) UpdateMetric(ctx context.Context, metric models.Metrics
 		if metric.Delta == nil {
 			return invalidMetric("counter delta is required")
 		}
-		if err := s.store.AddCounter(ctx, metric.ID, *metric.Delta); err != nil {
-			return err
-		}
 	case models.Gauge:
 		if metric.Value == nil {
 			return invalidMetric("gauge value is required")
@@ -58,13 +86,14 @@ func (s *MetricsService) UpdateMetric(ctx context.Context, metric models.Metrics
 		if math.IsNaN(*metric.Value) || math.IsInf(*metric.Value, 0) {
 			return invalidMetric("gauge value must be finite")
 		}
-		if err := s.store.SetGauge(ctx, metric.ID, *metric.Value); err != nil {
-			return err
-		}
 	default:
 		return invalidMetric("unsupported metric type")
 	}
 
+	return nil
+}
+
+func (s *MetricsService) runAfterUpdate() error {
 	if s.afterUpdate != nil {
 		if err := s.afterUpdate(); err != nil {
 			return err

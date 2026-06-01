@@ -15,32 +15,32 @@ import (
 )
 
 func TestReporterReportSendsMetrics(t *testing.T) {
-	var gotMethods []string
-	var gotContentTypes []string
-	var gotContentEncodings []string
-	var gotPaths []string
-	var gotBodies []models.Metrics
+	var gotMethod string
+	var gotContentType string
+	var gotContentEncoding string
+	var gotPath string
+	var gotBody []models.Metrics
+	var gotCalls int
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethods = append(gotMethods, r.Method)
-		gotContentTypes = append(gotContentTypes, r.Header.Get("Content-Type"))
-		gotContentEncodings = append(gotContentEncodings, r.Header.Get("Content-Encoding"))
-		gotPaths = append(gotPaths, r.URL.Path)
+		gotCalls++
+		gotMethod = r.Method
+		gotContentType = r.Header.Get("Content-Type")
+		gotContentEncoding = r.Header.Get("Content-Encoding")
+		gotPath = r.URL.Path
 
 		reader, err := gzip.NewReader(r.Body)
 		if err != nil {
 			t.Fatalf("new gzip reader: %v", err)
 		}
 
-		var metric models.Metrics
-		if err := json.NewDecoder(reader).Decode(&metric); err != nil {
+		if err := json.NewDecoder(reader).Decode(&gotBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
 		if err := reader.Close(); err != nil {
 			t.Fatalf("close gzip reader: %v", err)
 		}
 
-		gotBodies = append(gotBodies, metric)
 		_, _ = io.WriteString(w, "OK")
 	}))
 	defer server.Close()
@@ -55,30 +55,23 @@ func TestReporterReportSendsMetrics(t *testing.T) {
 		t.Fatalf("report metrics: %v", err)
 	}
 
-	wantMethods := []string{http.MethodPost, http.MethodPost}
-	if !reflect.DeepEqual(gotMethods, wantMethods) {
-		t.Fatalf("methods: got %v, want %v", gotMethods, wantMethods)
+	if gotCalls != 1 {
+		t.Fatalf("calls: got %d, want 1", gotCalls)
+	}
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method: got %q, want %q", gotMethod, http.MethodPost)
+	}
+	if gotContentType != "application/json" {
+		t.Fatalf("content type: got %q, want %q", gotContentType, "application/json")
+	}
+	if gotContentEncoding != "gzip" {
+		t.Fatalf("content encoding: got %q, want %q", gotContentEncoding, "gzip")
+	}
+	if gotPath != "/updates/" {
+		t.Fatalf("path: got %q, want %q", gotPath, "/updates/")
 	}
 
-	wantContentTypes := []string{"application/json", "application/json"}
-	if !reflect.DeepEqual(gotContentTypes, wantContentTypes) {
-		t.Fatalf("content types: got %v, want %v", gotContentTypes, wantContentTypes)
-	}
-
-	wantContentEncodings := []string{"gzip", "gzip"}
-	if !reflect.DeepEqual(gotContentEncodings, wantContentEncodings) {
-		t.Fatalf("content encodings: got %v, want %v", gotContentEncodings, wantContentEncodings)
-	}
-
-	wantPaths := []string{
-		"/update/",
-		"/update/",
-	}
-	if !reflect.DeepEqual(gotPaths, wantPaths) {
-		t.Fatalf("paths: got %v, want %v", gotPaths, wantPaths)
-	}
-
-	wantBodies := []models.Metrics{
+	wantBody := []models.Metrics{
 		{
 			ID:    "PollCount",
 			MType: models.Counter,
@@ -90,8 +83,29 @@ func TestReporterReportSendsMetrics(t *testing.T) {
 			Value: float64Ptr(42.5),
 		},
 	}
-	if !reflect.DeepEqual(gotBodies, wantBodies) {
-		t.Fatalf("bodies: got %#v, want %#v", gotBodies, wantBodies)
+	if !reflect.DeepEqual(gotBody, wantBody) {
+		t.Fatalf("body: got %#v, want %#v", gotBody, wantBody)
+	}
+}
+
+func TestReporterReportSkipsEmptyBatch(t *testing.T) {
+	called := false
+	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			called = true
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(http.NoBody),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}))
+
+	if err := reporter.Report(nil); err != nil {
+		t.Fatalf("report empty batch: %v", err)
+	}
+	if called {
+		t.Fatal("empty batch should not trigger HTTP request")
 	}
 }
 
@@ -155,36 +169,6 @@ func TestReporterAcceptsAddressWithoutScheme(t *testing.T) {
 	}
 	if gotHost != server.Listener.Addr().String() {
 		t.Fatalf("host: got %q, want %q", gotHost, server.Listener.Addr().String())
-	}
-}
-
-func TestReporterReportJoinsMultipleErrors(t *testing.T) {
-	firstErr := assertiveError("transport failed 1")
-	secondErr := assertiveError("transport failed 2")
-	callNumber := 0
-
-	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
-		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
-			callNumber++
-			if callNumber == 1 {
-				return nil, firstErr
-			}
-			return nil, secondErr
-		}),
-	}))
-
-	err := reporter.Report([]Metric{
-		{Name: "PollCount", Type: models.Counter, CounterValue: 1},
-		{Name: "Alloc", Type: models.Gauge, GaugeValue: 1.5},
-	})
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !errors.Is(err, firstErr) {
-		t.Fatalf("expected joined error to include %q, got %v", firstErr, err)
-	}
-	if !errors.Is(err, secondErr) {
-		t.Fatalf("expected joined error to include %q, got %v", secondErr, err)
 	}
 }
 

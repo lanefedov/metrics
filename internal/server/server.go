@@ -27,6 +27,8 @@ func NewHandler(metricsService *service.MetricsService, databasePing ...func(con
 	r.Get("/ping", handler.NewPingHandler(ping).ServeHTTP)
 	r.Post("/update", handler.NewJSONUpdateHandler(metricsService).ServeHTTP)
 	r.Post("/update/", handler.NewJSONUpdateHandler(metricsService).ServeHTTP)
+	r.Post("/updates", handler.NewJSONUpdatesHandler(metricsService).ServeHTTP)
+	r.Post("/updates/", handler.NewJSONUpdatesHandler(metricsService).ServeHTTP)
 	r.Post("/update/{type}/{name}/{value}", handler.NewUpdateHandler(metricsService).ServeHTTP)
 	r.Post("/value", handler.NewJSONValueHandler(metricsService).ServeHTTP)
 	r.Post("/value/", handler.NewJSONValueHandler(metricsService).ServeHTTP)

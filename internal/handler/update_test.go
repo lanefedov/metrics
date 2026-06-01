@@ -308,6 +308,107 @@ func TestJSONUpdateHandler(t *testing.T) {
 	}
 }
 
+func TestJSONUpdatesHandler(t *testing.T) {
+	gaugeValue := 42.5
+	counterDelta := int64(7)
+	updatedGaugeValue := 100.25
+
+	tests := []struct {
+		name             string
+		contentType      string
+		body             string
+		wantStatus       int
+		wantContentType  string
+		wantResponseBody []models.Metrics
+	}{
+		{
+			name:        "batch ok",
+			contentType: "application/json",
+			body: mustMetricsJSON(t, []models.Metrics{
+				{ID: "Alloc", MType: models.Gauge, Value: &gaugeValue},
+				{ID: "PollCount", MType: models.Counter, Delta: &counterDelta},
+				{ID: "Alloc", MType: models.Gauge, Value: &updatedGaugeValue},
+			}),
+			wantStatus:      http.StatusOK,
+			wantContentType: "application/json",
+			wantResponseBody: []models.Metrics{
+				{ID: "Alloc", MType: models.Gauge, Value: &gaugeValue},
+				{ID: "PollCount", MType: models.Counter, Delta: &counterDelta},
+				{ID: "Alloc", MType: models.Gauge, Value: &updatedGaugeValue},
+			},
+		},
+		{
+			name:             "empty batch ok",
+			contentType:      "application/json",
+			body:             `[]`,
+			wantStatus:       http.StatusOK,
+			wantContentType:  "application/json",
+			wantResponseBody: []models.Metrics{},
+		},
+		{
+			name:        "wrong content type",
+			contentType: "text/plain",
+			body: mustMetricsJSON(t, []models.Metrics{
+				{ID: "Alloc", MType: models.Gauge, Value: &gaugeValue},
+			}),
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:        "invalid json",
+			contentType: "application/json",
+			body:        `[{"id":"Alloc",`,
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:        "trailing json",
+			contentType: "application/json",
+			body: mustMetricsJSON(t, []models.Metrics{
+				{ID: "Alloc", MType: models.Gauge, Value: &gaugeValue},
+			}) + `{}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:        "invalid metric in batch",
+			contentType: "application/json",
+			body: mustMetricsJSON(t, []models.Metrics{
+				{ID: "Alloc", MType: models.Gauge, Value: &gaugeValue},
+				{ID: "Broken", MType: models.Counter},
+			}),
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeMetricsStorage{}
+			h := newTestRouter(store)
+
+			req := httptest.NewRequest(http.MethodPost, "/updates/", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+			rr := httptest.NewRecorder()
+
+			h.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status: got %d, want %d", rr.Code, tt.wantStatus)
+			}
+			if tt.wantContentType != "" {
+				if got := rr.Header().Get("Content-Type"); got != tt.wantContentType {
+					t.Fatalf("content type: got %q, want %q", got, tt.wantContentType)
+				}
+
+				var gotBody []models.Metrics
+				if err := json.NewDecoder(rr.Body).Decode(&gotBody); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				if !equalMetricsSlices(gotBody, tt.wantResponseBody) {
+					t.Fatalf("response body: got %+v, want %+v", gotBody, tt.wantResponseBody)
+				}
+			}
+		})
+	}
+}
+
 func TestJSONValueHandler(t *testing.T) {
 	store := &fakeMetricsStorage{}
 	_ = store.SetGauge(context.Background(), "Alloc", 42.5)
@@ -432,6 +533,8 @@ func newTestRouter(store *fakeMetricsStorage) http.Handler {
 	r := chi.NewRouter()
 	r.Post("/update", NewJSONUpdateHandler(metricsService).ServeHTTP)
 	r.Post("/update/", NewJSONUpdateHandler(metricsService).ServeHTTP)
+	r.Post("/updates", NewJSONUpdatesHandler(metricsService).ServeHTTP)
+	r.Post("/updates/", NewJSONUpdatesHandler(metricsService).ServeHTTP)
 	r.Post("/update/{type}/{name}/{value}", NewUpdateHandler(metricsService).ServeHTTP)
 	r.Post("/value", NewJSONValueHandler(metricsService).ServeHTTP)
 	r.Post("/value/", NewJSONValueHandler(metricsService).ServeHTTP)
@@ -450,6 +553,31 @@ func mustMetricJSON(t *testing.T, metric models.Metrics) string {
 	}
 
 	return string(body)
+}
+
+func mustMetricsJSON(t *testing.T, metrics []models.Metrics) string {
+	t.Helper()
+
+	body, err := json.Marshal(metrics)
+	if err != nil {
+		t.Fatalf("marshal metrics: %v", err)
+	}
+
+	return string(body)
+}
+
+func equalMetricsSlices(got, want []models.Metrics) bool {
+	if len(got) != len(want) {
+		return false
+	}
+
+	for i := range got {
+		if !equalMetrics(got[i], want[i]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func equalMetrics(got, want models.Metrics) bool {
@@ -516,6 +644,23 @@ func (f *fakeMetricsStorage) AddCounter(_ context.Context, name string, delta in
 	f.counters[name] += delta
 	f.lastCounterName = name
 	f.lastCounterDelta = delta
+	return nil
+}
+
+func (f *fakeMetricsStorage) UpdateMetrics(ctx context.Context, metrics []models.Metrics) error {
+	for _, metric := range metrics {
+		switch metric.MType {
+		case models.Counter:
+			if err := f.AddCounter(ctx, metric.ID, *metric.Delta); err != nil {
+				return err
+			}
+		case models.Gauge:
+			if err := f.SetGauge(ctx, metric.ID, *metric.Value); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 

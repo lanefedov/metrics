@@ -2,13 +2,17 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"sync"
+
+	models "github.com/lanefedov/metrics/internal/model"
 )
 
 // MetricsUpdater описывает операции обновления метрик.
 type MetricsUpdater interface {
 	SetGauge(ctx context.Context, name string, value float64) error
 	AddCounter(ctx context.Context, name string, delta int64) error
+	UpdateMetrics(ctx context.Context, metrics []models.Metrics) error
 }
 
 // MetricsReader описывает операции чтения отдельных метрик.
@@ -60,6 +64,25 @@ func (m *MemStorage) AddCounter(_ context.Context, name string, delta int64) err
 	defer m.mu.Unlock()
 
 	m.counters[name] += delta
+	return nil
+}
+
+// UpdateMetrics применяет набор обновлений метрик под одной блокировкой.
+func (m *MemStorage) UpdateMetrics(_ context.Context, metrics []models.Metrics) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, metric := range metrics {
+		switch metric.MType {
+		case models.Counter:
+			m.counters[metric.ID] += *metric.Delta
+		case models.Gauge:
+			m.gauges[metric.ID] = *metric.Value
+		default:
+			return fmt.Errorf("unsupported metric type %q", metric.MType)
+		}
+	}
+
 	return nil
 }
 

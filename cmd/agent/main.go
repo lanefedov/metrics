@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	cfg, err := parseAgentFlags(os.Args[1:])
+	cfg, err := loadAgentConfig(os.Args[1:])
 	if err != nil {
 		log.Fatal(err)
 	}

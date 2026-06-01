@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	models "github.com/lanefedov/metrics/internal/model"
+	"github.com/lanefedov/metrics/internal/service"
 )
 
 func TestUpdateHandler(t *testing.T) {
@@ -204,6 +207,199 @@ func TestValueHandler(t *testing.T) {
 	}
 }
 
+func TestJSONUpdateHandler(t *testing.T) {
+	store := &fakeMetricsStorage{}
+	h := newTestRouter(store)
+
+	gaugeValue := 42.5
+	counterDelta := int64(7)
+
+	tests := []struct {
+		name             string
+		contentType      string
+		body             string
+		wantStatus       int
+		wantContentType  string
+		wantResponseBody models.Metrics
+	}{
+		{
+			name:            "gauge ok",
+			contentType:     "application/json",
+			body:            mustMetricJSON(t, models.Metrics{ID: "Alloc", MType: models.Gauge, Value: &gaugeValue}),
+			wantStatus:      http.StatusOK,
+			wantContentType: "application/json",
+			wantResponseBody: models.Metrics{
+				ID:    "Alloc",
+				MType: models.Gauge,
+				Value: &gaugeValue,
+			},
+		},
+		{
+			name:            "counter ok",
+			contentType:     "application/json; charset=utf-8",
+			body:            mustMetricJSON(t, models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &counterDelta}),
+			wantStatus:      http.StatusOK,
+			wantContentType: "application/json",
+			wantResponseBody: models.Metrics{
+				ID:    "PollCount",
+				MType: models.Counter,
+				Delta: &counterDelta,
+			},
+		},
+		{
+			name:        "wrong content type",
+			contentType: "text/plain",
+			body:        mustMetricJSON(t, models.Metrics{ID: "Alloc", MType: models.Gauge, Value: &gaugeValue}),
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:        "invalid json",
+			contentType: "application/json",
+			body:        `{"id":"Alloc",`,
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:        "missing gauge value",
+			contentType: "application/json",
+			body:        mustMetricJSON(t, models.Metrics{ID: "Alloc", MType: models.Gauge}),
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:        "unknown metric type",
+			contentType: "application/json",
+			body:        `{"id":"Alloc","type":"unknown","value":42.5}`,
+			wantStatus:  http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+			rr := httptest.NewRecorder()
+
+			h.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status: got %d, want %d", rr.Code, tt.wantStatus)
+			}
+			if tt.wantContentType != "" {
+				if got := rr.Header().Get("Content-Type"); got != tt.wantContentType {
+					t.Fatalf("content type: got %q, want %q", got, tt.wantContentType)
+				}
+
+				var gotBody models.Metrics
+				if err := json.NewDecoder(rr.Body).Decode(&gotBody); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				if !equalMetrics(gotBody, tt.wantResponseBody) {
+					t.Fatalf("response body: got %+v, want %+v", gotBody, tt.wantResponseBody)
+				}
+			}
+		})
+	}
+
+	if store.lastGaugeName != "Alloc" || store.lastGaugeValue != 42.5 {
+		t.Fatalf("stored gauge: got %q=%v, want %q=%v", store.lastGaugeName, store.lastGaugeValue, "Alloc", 42.5)
+	}
+	if store.lastCounterName != "PollCount" || store.lastCounterDelta != 7 {
+		t.Fatalf("stored counter: got %q=%d, want %q=%d", store.lastCounterName, store.lastCounterDelta, "PollCount", 7)
+	}
+}
+
+func TestJSONValueHandler(t *testing.T) {
+	store := &fakeMetricsStorage{}
+	store.SetGauge("Alloc", 42.5)
+	store.AddCounter("PollCount", 7)
+
+	h := newTestRouter(store)
+
+	tests := []struct {
+		name             string
+		contentType      string
+		body             string
+		wantStatus       int
+		wantContentType  string
+		wantResponseBody models.Metrics
+	}{
+		{
+			name:            "gauge ok",
+			contentType:     "application/json",
+			body:            `{"id":"Alloc","type":"gauge"}`,
+			wantStatus:      http.StatusOK,
+			wantContentType: "application/json",
+			wantResponseBody: models.Metrics{
+				ID:    "Alloc",
+				MType: models.Gauge,
+				Value: float64Ptr(42.5),
+			},
+		},
+		{
+			name:            "counter ok",
+			contentType:     "application/json",
+			body:            `{"id":"PollCount","type":"counter"}`,
+			wantStatus:      http.StatusOK,
+			wantContentType: "application/json",
+			wantResponseBody: models.Metrics{
+				ID:    "PollCount",
+				MType: models.Counter,
+				Delta: int64Ptr(7),
+			},
+		},
+		{
+			name:        "unknown metric",
+			contentType: "application/json",
+			body:        `{"id":"Unknown","type":"counter"}`,
+			wantStatus:  http.StatusNotFound,
+		},
+		{
+			name:        "bad metric type",
+			contentType: "application/json",
+			body:        `{"id":"Alloc","type":"unknown"}`,
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:        "wrong content type",
+			contentType: "text/plain",
+			body:        `{"id":"Alloc","type":"gauge"}`,
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:        "invalid json",
+			contentType: "application/json",
+			body:        `{"id":"Alloc"`,
+			wantStatus:  http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/value", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+			rr := httptest.NewRecorder()
+
+			h.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status: got %d, want %d", rr.Code, tt.wantStatus)
+			}
+			if tt.wantContentType != "" {
+				if got := rr.Header().Get("Content-Type"); got != tt.wantContentType {
+					t.Fatalf("content type: got %q, want %q", got, tt.wantContentType)
+				}
+
+				var gotBody models.Metrics
+				if err := json.NewDecoder(rr.Body).Decode(&gotBody); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				if !equalMetrics(gotBody, tt.wantResponseBody) {
+					t.Fatalf("response body: got %+v, want %+v", gotBody, tt.wantResponseBody)
+				}
+			}
+		})
+	}
+}
+
 func TestListHandler(t *testing.T) {
 	store := &fakeMetricsStorage{}
 	store.SetGauge("Alloc", 42.5)
@@ -231,12 +427,66 @@ func TestListHandler(t *testing.T) {
 }
 
 func newTestRouter(store *fakeMetricsStorage) http.Handler {
+	metricsService := service.NewMetricsService(store)
 	r := chi.NewRouter()
-	r.Post("/update/{type}/{name}/{value}", NewUpdateHandler(store).ServeHTTP)
-	r.Get("/value/{type}/{name}", NewValueHandler(store).ServeHTTP)
-	r.Get("/", NewListHandler(store).ServeHTTP)
+	r.Post("/update", NewJSONUpdateHandler(metricsService).ServeHTTP)
+	r.Post("/update/", NewJSONUpdateHandler(metricsService).ServeHTTP)
+	r.Post("/update/{type}/{name}/{value}", NewUpdateHandler(metricsService).ServeHTTP)
+	r.Post("/value", NewJSONValueHandler(metricsService).ServeHTTP)
+	r.Post("/value/", NewJSONValueHandler(metricsService).ServeHTTP)
+	r.Get("/value/{type}/{name}", NewValueHandler(metricsService).ServeHTTP)
+	r.Get("/", NewListHandler(metricsService).ServeHTTP)
 
 	return r
+}
+
+func mustMetricJSON(t *testing.T, metric models.Metrics) string {
+	t.Helper()
+
+	body, err := json.Marshal(metric)
+	if err != nil {
+		t.Fatalf("marshal metric: %v", err)
+	}
+
+	return string(body)
+}
+
+func equalMetrics(got, want models.Metrics) bool {
+	if got.ID != want.ID || got.MType != want.MType || got.Hash != want.Hash {
+		return false
+	}
+	if !equalInt64Ptr(got.Delta, want.Delta) {
+		return false
+	}
+	if !equalFloat64Ptr(got.Value, want.Value) {
+		return false
+	}
+
+	return true
+}
+
+func equalInt64Ptr(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	return *a == *b
+}
+
+func equalFloat64Ptr(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	return *a == *b
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
+}
+
+func float64Ptr(v float64) *float64 {
+	return &v
 }
 
 type fakeMetricsStorage struct {

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/go-resty/resty/v2"
 	models "github.com/lanefedov/metrics/internal/model"
@@ -111,11 +113,14 @@ func TestReporterReportSkipsEmptyBatch(t *testing.T) {
 
 func TestReporterReportReturnsTransportError(t *testing.T) {
 	transportErr := assertiveError("transport failed")
+	var calls int
 	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
 		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			calls++
 			return nil, transportErr
 		}),
 	}))
+	disableReporterRetrySleep(reporter)
 
 	err := reporter.Report([]Metric{
 		{Name: "PollCount", Type: models.Counter, CounterValue: 1},
@@ -126,11 +131,45 @@ func TestReporterReportReturnsTransportError(t *testing.T) {
 	if !errors.Is(err, transportErr) {
 		t.Fatalf("expected error to include %q, got %v", transportErr, err)
 	}
+	if calls != 4 {
+		t.Fatalf("calls: got %d, want 4", calls)
+	}
+}
+
+func TestReporterReportRetriesTransportErrorUntilSuccess(t *testing.T) {
+	transportErr := assertiveError("transport failed")
+	var calls int
+	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			if calls < 3 {
+				return nil, transportErr
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(http.NoBody),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}))
+	disableReporterRetrySleep(reporter)
+
+	err := reporter.Report([]Metric{
+		{Name: "PollCount", Type: models.Counter, CounterValue: 1},
+	})
+	if err != nil {
+		t.Fatalf("report metrics: %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("calls: got %d, want 3", calls)
+	}
 }
 
 func TestReporterReportReturnsStatusError(t *testing.T) {
+	var calls int
 	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
 		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			calls++
 			return &http.Response{
 				StatusCode: http.StatusBadRequest,
 				Body:       io.NopCloser(http.NoBody),
@@ -147,6 +186,9 @@ func TestReporterReportReturnsStatusError(t *testing.T) {
 	}
 	if err.Error() != "unexpected status code: 400" {
 		t.Fatalf("error: got %q, want %q", err.Error(), "unexpected status code: 400")
+	}
+	if calls != 1 {
+		t.Fatalf("calls: got %d, want 1", calls)
 	}
 }
 
@@ -182,6 +224,12 @@ type assertiveError string
 
 func (e assertiveError) Error() string {
 	return string(e)
+}
+
+func disableReporterRetrySleep(reporter *Reporter) {
+	reporter.retrySleep = func(context.Context, time.Duration) error {
+		return nil
+	}
 }
 
 func int64Ptr(v int64) *int64 {

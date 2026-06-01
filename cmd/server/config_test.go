@@ -26,6 +26,9 @@ func TestLoadServerConfigUsesDefaultsWithoutEnv(t *testing.T) {
 	if cfg.databaseDSN != "" {
 		t.Fatalf("database dsn: got %q, want empty", cfg.databaseDSN)
 	}
+	if cfg.storageMode != storageModeMemory {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeMemory)
+	}
 }
 
 func TestLoadServerConfigUsesEnvValue(t *testing.T) {
@@ -70,6 +73,9 @@ func TestLoadServerConfigUsesEnvValues(t *testing.T) {
 	if cfg.databaseDSN != dsn {
 		t.Fatalf("database dsn: got %q, want %q", cfg.databaseDSN, dsn)
 	}
+	if cfg.storageMode != storageModeDatabase {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeDatabase)
+	}
 }
 
 func TestLoadServerConfigEnvOverridesFlag(t *testing.T) {
@@ -111,6 +117,9 @@ func TestLoadServerConfigEnvOverridesFlag(t *testing.T) {
 	if cfg.databaseDSN != envDSN {
 		t.Fatalf("database dsn: got %q, want %q", cfg.databaseDSN, envDSN)
 	}
+	if cfg.storageMode != storageModeDatabase {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeDatabase)
+	}
 }
 
 func TestLoadServerConfigUsesFlagsWithoutEnv(t *testing.T) {
@@ -141,6 +150,42 @@ func TestLoadServerConfigUsesFlagsWithoutEnv(t *testing.T) {
 	}
 	if cfg.databaseDSN != dsn {
 		t.Fatalf("database dsn: got %q, want %q", cfg.databaseDSN, dsn)
+	}
+	if cfg.storageMode != storageModeDatabase {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeDatabase)
+	}
+}
+
+func TestLoadServerConfigFallsBackToFileWhenDatabaseDSNIsEmpty(t *testing.T) {
+	cfg, err := loadServerConfigWithEnv(
+		[]string{
+			"-d=postgres://localhost/db",
+			"-f=/tmp/metrics.json",
+		},
+		envLookup(map[string]string{
+			databaseDSNEnvKey: "",
+		}),
+	)
+	if err != nil {
+		t.Fatalf("load server config: %v", err)
+	}
+
+	if cfg.storageMode != storageModeFile {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeFile)
+	}
+}
+
+func TestLoadServerConfigFallsBackToMemoryWhenDatabaseAndFileAreEmpty(t *testing.T) {
+	cfg, err := loadServerConfigWithEnv(nil, envLookup(map[string]string{
+		databaseDSNEnvKey:     "",
+		fileStoragePathEnvKey: "",
+	}))
+	if err != nil {
+		t.Fatalf("load server config: %v", err)
+	}
+
+	if cfg.storageMode != storageModeMemory {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeMemory)
 	}
 }
 

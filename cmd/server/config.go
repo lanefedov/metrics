@@ -39,6 +39,7 @@ func loadServerConfigWithEnv(args []string, lookupEnv func(string) (string, bool
 
 	if value, ok := lookupEnv(fileStoragePathEnvKey); ok {
 		cfg.fileStoragePath = value
+		cfg.fileStoragePathProvided = true
 	}
 
 	if value, ok := lookupEnv(restoreEnvKey); ok {
@@ -51,7 +52,10 @@ func loadServerConfigWithEnv(args []string, lookupEnv func(string) (string, bool
 
 	if value, ok := lookupEnv(databaseDSNEnvKey); ok {
 		cfg.databaseDSN = value
+		cfg.databaseDSNProvided = true
 	}
+
+	cfg.resolveStorageMode()
 
 	return cfg, nil
 }

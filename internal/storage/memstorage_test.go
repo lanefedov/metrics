@@ -1,14 +1,18 @@
 package storage
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestMemStorage(t *testing.T) {
 	s := NewMemStorage()
 
-	s.AddCounter("c", 10)
-	s.AddCounter("c", 5)
-	s.SetGauge("g", 1.25)
-	s.SetGauge("g", 2.5)
+	ctx := context.Background()
+	_ = s.AddCounter(ctx, "c", 10)
+	_ = s.AddCounter(ctx, "c", 5)
+	_ = s.SetGauge(ctx, "g", 1.25)
+	_ = s.SetGauge(ctx, "g", 2.5)
 
 	if s.counters["c"] != 15 {
 		t.Fatalf("counter: got %d, want 15", s.counters["c"])

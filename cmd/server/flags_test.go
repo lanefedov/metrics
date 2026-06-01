@@ -14,6 +14,9 @@ func TestParseServerFlagsUsesDefaults(t *testing.T) {
 	if cfg.databaseDSN != "" {
 		t.Fatalf("database dsn: got %q, want empty", cfg.databaseDSN)
 	}
+	if cfg.storageMode != storageModeMemory {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeMemory)
+	}
 }
 
 func TestParseServerFlagsOverridesAddress(t *testing.T) {
@@ -37,6 +40,31 @@ func TestParseServerFlagsOverridesDatabaseDSN(t *testing.T) {
 
 	if cfg.databaseDSN != dsn {
 		t.Fatalf("database dsn: got %q, want %q", cfg.databaseDSN, dsn)
+	}
+	if cfg.storageMode != storageModeDatabase {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeDatabase)
+	}
+}
+
+func TestParseServerFlagsUsesFileStorageWhenPathProvided(t *testing.T) {
+	cfg, err := parseServerFlags([]string{"-f=/tmp/metrics.json"})
+	if err != nil {
+		t.Fatalf("parse server flags: %v", err)
+	}
+
+	if cfg.storageMode != storageModeFile {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeFile)
+	}
+}
+
+func TestParseServerFlagsFallsBackToMemoryWhenDatabaseDSNIsEmpty(t *testing.T) {
+	cfg, err := parseServerFlags([]string{"-d="})
+	if err != nil {
+		t.Fatalf("parse server flags: %v", err)
+	}
+
+	if cfg.storageMode != storageModeMemory {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeMemory)
 	}
 }
 

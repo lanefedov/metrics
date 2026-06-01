@@ -1,23 +1,26 @@
 package storage
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // MetricsUpdater описывает операции обновления метрик.
 type MetricsUpdater interface {
-	SetGauge(name string, value float64)
-	AddCounter(name string, delta int64)
+	SetGauge(ctx context.Context, name string, value float64) error
+	AddCounter(ctx context.Context, name string, delta int64) error
 }
 
 // MetricsReader описывает операции чтения отдельных метрик.
 type MetricsReader interface {
-	GetGauge(name string) (float64, bool)
-	GetCounter(name string) (int64, bool)
+	GetGauge(ctx context.Context, name string) (float64, bool, error)
+	GetCounter(ctx context.Context, name string) (int64, bool, error)
 }
 
 // MetricsLister описывает операции получения снимка всех метрик.
 type MetricsLister interface {
-	ListGauges() map[string]float64
-	ListCounters() map[string]int64
+	ListGauges(ctx context.Context) (map[string]float64, error)
+	ListCounters(ctx context.Context) (map[string]int64, error)
 }
 
 // MetricsStorage объединяет операции чтения и записи метрик.
@@ -43,41 +46,43 @@ func NewMemStorage() *MemStorage {
 }
 
 // SetGauge устанавливает значение метрики типа gauge.
-func (m *MemStorage) SetGauge(name string, value float64) {
+func (m *MemStorage) SetGauge(_ context.Context, name string, value float64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.gauges[name] = value
+	return nil
 }
 
 // AddCounter добавляет delta к накопленному значению counter.
-func (m *MemStorage) AddCounter(name string, delta int64) {
+func (m *MemStorage) AddCounter(_ context.Context, name string, delta int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.counters[name] += delta
+	return nil
 }
 
 // GetGauge возвращает текущее значение gauge и признак его существования.
-func (m *MemStorage) GetGauge(name string) (float64, bool) {
+func (m *MemStorage) GetGauge(_ context.Context, name string) (float64, bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	value, ok := m.gauges[name]
-	return value, ok
+	return value, ok, nil
 }
 
 // GetCounter возвращает текущее значение counter и признак его существования.
-func (m *MemStorage) GetCounter(name string) (int64, bool) {
+func (m *MemStorage) GetCounter(_ context.Context, name string) (int64, bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	value, ok := m.counters[name]
-	return value, ok
+	return value, ok, nil
 }
 
 // ListGauges возвращает снимок всех gauge-метрик.
-func (m *MemStorage) ListGauges() map[string]float64 {
+func (m *MemStorage) ListGauges(_ context.Context) (map[string]float64, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -86,11 +91,11 @@ func (m *MemStorage) ListGauges() map[string]float64 {
 		gauges[name] = value
 	}
 
-	return gauges
+	return gauges, nil
 }
 
 // ListCounters возвращает снимок всех counter-метрик.
-func (m *MemStorage) ListCounters() map[string]int64 {
+func (m *MemStorage) ListCounters(_ context.Context) (map[string]int64, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -99,7 +104,7 @@ func (m *MemStorage) ListCounters() map[string]int64 {
 		counters[name] = value
 	}
 
-	return counters
+	return counters, nil
 }
 
 func (m *MemStorage) replaceAll(counters map[string]int64, gauges map[string]float64) {

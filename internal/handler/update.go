@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -68,8 +69,13 @@ func (h *UpdateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.UpdateMetric(metric); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+	if err := h.service.UpdateMetric(r.Context(), metric); err != nil {
+		if errors.Is(err, service.ErrInvalidMetric) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 

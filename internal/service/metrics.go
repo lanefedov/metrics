@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -37,7 +38,7 @@ func NewMetricsServiceWithAfterUpdate(store storage.MetricsStorage, afterUpdate 
 }
 
 // UpdateMetric валидирует и сохраняет метрику.
-func (s *MetricsService) UpdateMetric(metric models.Metrics) error {
+func (s *MetricsService) UpdateMetric(ctx context.Context, metric models.Metrics) error {
 	if metric.ID == "" {
 		return invalidMetric("metric id is required")
 	}
@@ -47,7 +48,9 @@ func (s *MetricsService) UpdateMetric(metric models.Metrics) error {
 		if metric.Delta == nil {
 			return invalidMetric("counter delta is required")
 		}
-		s.store.AddCounter(metric.ID, *metric.Delta)
+		if err := s.store.AddCounter(ctx, metric.ID, *metric.Delta); err != nil {
+			return err
+		}
 	case models.Gauge:
 		if metric.Value == nil {
 			return invalidMetric("gauge value is required")
@@ -55,7 +58,9 @@ func (s *MetricsService) UpdateMetric(metric models.Metrics) error {
 		if math.IsNaN(*metric.Value) || math.IsInf(*metric.Value, 0) {
 			return invalidMetric("gauge value must be finite")
 		}
-		s.store.SetGauge(metric.ID, *metric.Value)
+		if err := s.store.SetGauge(ctx, metric.ID, *metric.Value); err != nil {
+			return err
+		}
 	default:
 		return invalidMetric("unsupported metric type")
 	}
@@ -70,14 +75,17 @@ func (s *MetricsService) UpdateMetric(metric models.Metrics) error {
 }
 
 // GetMetric возвращает актуальное значение метрики.
-func (s *MetricsService) GetMetric(metric models.Metrics) (*models.Metrics, error) {
+func (s *MetricsService) GetMetric(ctx context.Context, metric models.Metrics) (*models.Metrics, error) {
 	if metric.ID == "" {
 		return nil, invalidMetric("metric id is required")
 	}
 
 	switch metric.MType {
 	case models.Counter:
-		value, ok := s.store.GetCounter(metric.ID)
+		value, ok, err := s.store.GetCounter(ctx, metric.ID)
+		if err != nil {
+			return nil, err
+		}
 		if !ok {
 			return nil, ErrMetricNotFound
 		}
@@ -88,7 +96,10 @@ func (s *MetricsService) GetMetric(metric models.Metrics) (*models.Metrics, erro
 			Delta: &value,
 		}, nil
 	case models.Gauge:
-		value, ok := s.store.GetGauge(metric.ID)
+		value, ok, err := s.store.GetGauge(ctx, metric.ID)
+		if err != nil {
+			return nil, err
+		}
 		if !ok {
 			return nil, ErrMetricNotFound
 		}
@@ -104,10 +115,19 @@ func (s *MetricsService) GetMetric(metric models.Metrics) (*models.Metrics, erro
 }
 
 // ListMetrics возвращает отсортированный срез всех метрик.
-func (s *MetricsService) ListMetrics() []models.Metrics {
-	metrics := make([]models.Metrics, 0, len(s.store.ListCounters())+len(s.store.ListGauges()))
+func (s *MetricsService) ListMetrics(ctx context.Context) ([]models.Metrics, error) {
+	counters, err := s.store.ListCounters(ctx)
+	if err != nil {
+		return nil, err
+	}
+	gauges, err := s.store.ListGauges(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	for name, value := range s.store.ListCounters() {
+	metrics := make([]models.Metrics, 0, len(counters)+len(gauges))
+
+	for name, value := range counters {
 		delta := value
 		metrics = append(metrics, models.Metrics{
 			ID:    name,
@@ -116,7 +136,7 @@ func (s *MetricsService) ListMetrics() []models.Metrics {
 		})
 	}
 
-	for name, value := range s.store.ListGauges() {
+	for name, value := range gauges {
 		gaugeValue := value
 		metrics = append(metrics, models.Metrics{
 			ID:    name,
@@ -133,7 +153,7 @@ func (s *MetricsService) ListMetrics() []models.Metrics {
 		return metrics[i].MType < metrics[j].MType
 	})
 
-	return metrics
+	return metrics, nil
 }
 
 func invalidMetric(message string) error {

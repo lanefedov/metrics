@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -154,8 +155,8 @@ func TestUpdateHandlerStoresCounter(t *testing.T) {
 
 func TestValueHandler(t *testing.T) {
 	store := &fakeMetricsStorage{}
-	store.SetGauge("Alloc", 42.5)
-	store.AddCounter("PollCount", 7)
+	_ = store.SetGauge(context.Background(), "Alloc", 42.5)
+	_ = store.AddCounter(context.Background(), "PollCount", 7)
 
 	h := newTestRouter(store)
 
@@ -309,8 +310,8 @@ func TestJSONUpdateHandler(t *testing.T) {
 
 func TestJSONValueHandler(t *testing.T) {
 	store := &fakeMetricsStorage{}
-	store.SetGauge("Alloc", 42.5)
-	store.AddCounter("PollCount", 7)
+	_ = store.SetGauge(context.Background(), "Alloc", 42.5)
+	_ = store.AddCounter(context.Background(), "PollCount", 7)
 
 	h := newTestRouter(store)
 
@@ -402,8 +403,8 @@ func TestJSONValueHandler(t *testing.T) {
 
 func TestListHandler(t *testing.T) {
 	store := &fakeMetricsStorage{}
-	store.SetGauge("Alloc", 42.5)
-	store.AddCounter("PollCount", 7)
+	_ = store.SetGauge(context.Background(), "Alloc", 42.5)
+	_ = store.AddCounter(context.Background(), "PollCount", 7)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
@@ -498,48 +499,50 @@ type fakeMetricsStorage struct {
 	lastCounterDelta int64
 }
 
-func (f *fakeMetricsStorage) SetGauge(name string, value float64) {
+func (f *fakeMetricsStorage) SetGauge(_ context.Context, name string, value float64) error {
 	if f.gauges == nil {
 		f.gauges = make(map[string]float64)
 	}
 	f.gauges[name] = value
 	f.lastGaugeName = name
 	f.lastGaugeValue = value
+	return nil
 }
 
-func (f *fakeMetricsStorage) AddCounter(name string, delta int64) {
+func (f *fakeMetricsStorage) AddCounter(_ context.Context, name string, delta int64) error {
 	if f.counters == nil {
 		f.counters = make(map[string]int64)
 	}
 	f.counters[name] += delta
 	f.lastCounterName = name
 	f.lastCounterDelta = delta
+	return nil
 }
 
-func (f *fakeMetricsStorage) GetGauge(name string) (float64, bool) {
+func (f *fakeMetricsStorage) GetGauge(_ context.Context, name string) (float64, bool, error) {
 	value, ok := f.gauges[name]
-	return value, ok
+	return value, ok, nil
 }
 
-func (f *fakeMetricsStorage) GetCounter(name string) (int64, bool) {
+func (f *fakeMetricsStorage) GetCounter(_ context.Context, name string) (int64, bool, error) {
 	value, ok := f.counters[name]
-	return value, ok
+	return value, ok, nil
 }
 
-func (f *fakeMetricsStorage) ListGauges() map[string]float64 {
+func (f *fakeMetricsStorage) ListGauges(_ context.Context) (map[string]float64, error) {
 	gauges := make(map[string]float64, len(f.gauges))
 	for name, value := range f.gauges {
 		gauges[name] = value
 	}
 
-	return gauges
+	return gauges, nil
 }
 
-func (f *fakeMetricsStorage) ListCounters() map[string]int64 {
+func (f *fakeMetricsStorage) ListCounters(_ context.Context) (map[string]int64, error) {
 	counters := make(map[string]int64, len(f.counters))
 	for name, value := range f.counters {
 		counters[name] = value
 	}
 
-	return counters
+	return counters, nil
 }

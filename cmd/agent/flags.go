@@ -21,6 +21,7 @@ func parseAgentFlags(args []string) (agent.Config, error) {
 	fs.IntVar(&reportSeconds, "r", int(cfg.ReportInterval/time.Second), "report interval in seconds")
 	fs.IntVar(&pollSeconds, "p", int(cfg.PollInterval/time.Second), "poll interval in seconds")
 	fs.StringVar(&cfg.Key, "k", "", "signing key")
+	fs.IntVar(&cfg.RateLimit, "l", cfg.RateLimit, "max concurrent outgoing requests")
 
 	if err := fs.Parse(args); err != nil {
 		return agent.Config{}, err

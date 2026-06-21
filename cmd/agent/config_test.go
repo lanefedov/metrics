@@ -24,6 +24,9 @@ func TestLoadAgentConfigUsesDefaultsWithoutEnv(t *testing.T) {
 	if cfg.PollInterval != 2*time.Second {
 		t.Fatalf("poll interval: got %s, want %s", cfg.PollInterval, 2*time.Second)
 	}
+	if cfg.RateLimit != 1 {
+		t.Fatalf("rate limit: got %d, want 1", cfg.RateLimit)
+	}
 }
 
 func TestLoadAgentConfigUsesEnvValues(t *testing.T) {
@@ -31,6 +34,7 @@ func TestLoadAgentConfigUsesEnvValues(t *testing.T) {
 	t.Setenv("ADDRESS", "localhost:9090")
 	t.Setenv("REPORT_INTERVAL", "13")
 	t.Setenv("POLL_INTERVAL", "5")
+	t.Setenv("RATE_LIMIT", "4")
 
 	cfg, err := loadAgentConfig(nil)
 	if err != nil {
@@ -46,6 +50,9 @@ func TestLoadAgentConfigUsesEnvValues(t *testing.T) {
 	if cfg.PollInterval != 5*time.Second {
 		t.Fatalf("poll interval: got %s, want %s", cfg.PollInterval, 5*time.Second)
 	}
+	if cfg.RateLimit != 4 {
+		t.Fatalf("rate limit: got %d, want 4", cfg.RateLimit)
+	}
 }
 
 func TestLoadAgentConfigEnvOverridesFlags(t *testing.T) {
@@ -53,11 +60,13 @@ func TestLoadAgentConfigEnvOverridesFlags(t *testing.T) {
 	t.Setenv("ADDRESS", "localhost:9090")
 	t.Setenv("REPORT_INTERVAL", "13")
 	t.Setenv("POLL_INTERVAL", "5")
+	t.Setenv("RATE_LIMIT", "2")
 
 	cfg, err := loadAgentConfig([]string{
 		"-a=127.0.0.1:9000",
 		"-r=15",
 		"-p=4",
+		"-l=5",
 	})
 	if err != nil {
 		t.Fatalf("load agent config: %v", err)
@@ -71,6 +80,9 @@ func TestLoadAgentConfigEnvOverridesFlags(t *testing.T) {
 	}
 	if cfg.PollInterval != 5*time.Second {
 		t.Fatalf("poll interval: got %s, want %s", cfg.PollInterval, 5*time.Second)
+	}
+	if cfg.RateLimit != 2 {
+		t.Fatalf("rate limit: got %d, want 2", cfg.RateLimit)
 	}
 }
 
@@ -91,7 +103,7 @@ func TestLoadAgentConfigRejectsInvalidEnvInterval(t *testing.T) {
 func unsetAgentEnv(t *testing.T) {
 	t.Helper()
 
-	keys := []string{"ADDRESS", "REPORT_INTERVAL", "POLL_INTERVAL"}
+	keys := []string{"ADDRESS", "REPORT_INTERVAL", "POLL_INTERVAL", "KEY", "RATE_LIMIT"}
 	for _, key := range keys {
 		value, ok := os.LookupEnv(key)
 		if err := os.Unsetenv(key); err != nil {

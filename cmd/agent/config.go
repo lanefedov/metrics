@@ -12,6 +12,7 @@ type agentEnvConfig struct {
 	ReportInterval int    `env:"REPORT_INTERVAL"`
 	PollInterval   int    `env:"POLL_INTERVAL"`
 	Key            string `env:"KEY"`
+	RateLimit      int    `env:"RATE_LIMIT"`
 }
 
 func loadAgentConfig(args []string) (agent.Config, error) {
@@ -25,6 +26,7 @@ func loadAgentConfig(args []string) (agent.Config, error) {
 		ReportInterval: int(cfg.ReportInterval / time.Second),
 		PollInterval:   int(cfg.PollInterval / time.Second),
 		Key:            cfg.Key,
+		RateLimit:      cfg.RateLimit,
 	}
 
 	if err := cleanenv.ReadEnv(&envCfg); err != nil {
@@ -35,6 +37,7 @@ func loadAgentConfig(args []string) (agent.Config, error) {
 	cfg.ReportInterval = time.Duration(envCfg.ReportInterval) * time.Second
 	cfg.PollInterval = time.Duration(envCfg.PollInterval) * time.Second
 	cfg.Key = envCfg.Key
+	cfg.RateLimit = envCfg.RateLimit
 
 	return cfg, nil
 }

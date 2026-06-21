@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lanefedov/metrics/internal/handler"
 	"github.com/lanefedov/metrics/internal/server"
 	"github.com/lanefedov/metrics/internal/service"
 	"github.com/lanefedov/metrics/internal/storage"
@@ -27,7 +28,7 @@ func main() {
 
 	var store storage.MetricsStorage
 	var fileStore *storage.MemStorage
-	var databasePing func(context.Context) error
+	var databasePing handler.PingFunc
 	switch cfg.storageMode {
 	case storageModeDatabase:
 		if err := runDatabaseMigrations(cfg.databaseDSN); err != nil {

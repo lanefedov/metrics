@@ -47,7 +47,7 @@ func TestReporterReportSendsMetrics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	reporter := NewReporter(server.URL, resty.NewWithClient(server.Client()))
+	reporter := NewReporter(server.URL, "", resty.NewWithClient(server.Client()))
 	metrics := []Metric{
 		{Name: "PollCount", Type: models.Counter, CounterValue: 7},
 		{Name: "RandomValue", Type: models.Gauge, GaugeValue: 42.5},
@@ -92,7 +92,7 @@ func TestReporterReportSendsMetrics(t *testing.T) {
 
 func TestReporterReportSkipsEmptyBatch(t *testing.T) {
 	called := false
-	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
+	reporter := NewReporter("http://localhost:8080", "", resty.NewWithClient(&http.Client{
 		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 			called = true
 			return &http.Response{
@@ -114,7 +114,7 @@ func TestReporterReportSkipsEmptyBatch(t *testing.T) {
 func TestReporterReportReturnsTransportError(t *testing.T) {
 	transportErr := assertiveError("transport failed")
 	var calls int
-	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
+	reporter := NewReporter("http://localhost:8080", "", resty.NewWithClient(&http.Client{
 		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 			calls++
 			return nil, transportErr
@@ -139,7 +139,7 @@ func TestReporterReportReturnsTransportError(t *testing.T) {
 func TestReporterReportRetriesTransportErrorUntilSuccess(t *testing.T) {
 	transportErr := assertiveError("transport failed")
 	var calls int
-	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
+	reporter := NewReporter("http://localhost:8080", "", resty.NewWithClient(&http.Client{
 		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 			calls++
 			if calls < 3 {
@@ -167,7 +167,7 @@ func TestReporterReportRetriesTransportErrorUntilSuccess(t *testing.T) {
 
 func TestReporterReportReturnsStatusError(t *testing.T) {
 	var calls int
-	reporter := NewReporter("http://localhost:8080", resty.NewWithClient(&http.Client{
+	reporter := NewReporter("http://localhost:8080", "", resty.NewWithClient(&http.Client{
 		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 			calls++
 			return &http.Response{
@@ -201,7 +201,7 @@ func TestReporterAcceptsAddressWithoutScheme(t *testing.T) {
 	}))
 	defer server.Close()
 
-	reporter := NewReporter(server.Listener.Addr().String(), resty.NewWithClient(server.Client()))
+	reporter := NewReporter(server.Listener.Addr().String(), "", resty.NewWithClient(server.Client()))
 
 	err := reporter.Report([]Metric{
 		{Name: "Alloc", Type: models.Gauge, GaugeValue: 1.5},

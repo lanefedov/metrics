@@ -12,7 +12,7 @@ import (
 )
 
 // NewHandler создаёт дерево HTTP-обработчиков сервера метрик.
-func NewHandler(metricsService *service.MetricsService, databasePing ...func(context.Context) error) http.Handler {
+func NewHandler(metricsService *service.MetricsService, key string, databasePing ...func(context.Context) error) http.Handler {
 	r := chi.NewRouter()
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
 
@@ -24,6 +24,7 @@ func NewHandler(metricsService *service.MetricsService, databasePing ...func(con
 	r.Use(loggingMiddleware(logger))
 	r.Use(requestDecompressionMiddleware)
 	r.Use(responseCompressionMiddleware)
+	r.Use(hashMiddleware(key))
 	r.Get("/ping", handler.NewPingHandler(ping).ServeHTTP)
 	r.Post("/update", handler.NewJSONUpdateHandler(metricsService).ServeHTTP)
 	r.Post("/update/", handler.NewJSONUpdateHandler(metricsService).ServeHTTP)

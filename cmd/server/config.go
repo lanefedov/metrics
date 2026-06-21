@@ -13,6 +13,7 @@ const (
 	fileStoragePathEnvKey = "FILE_STORAGE_PATH"
 	restoreEnvKey         = "RESTORE"
 	databaseDSNEnvKey     = "DATABASE_DSN"
+	keyEnvKey             = "KEY"
 )
 
 func loadServerConfig(args []string) (serverConfig, error) {
@@ -53,6 +54,10 @@ func loadServerConfigWithEnv(args []string, lookupEnv func(string) (string, bool
 	if value, ok := lookupEnv(databaseDSNEnvKey); ok {
 		cfg.databaseDSN = value
 		cfg.databaseDSNProvided = true
+	}
+
+	if value, ok := lookupEnv(keyEnvKey); ok {
+		cfg.key = value
 	}
 
 	cfg.resolveStorageMode()

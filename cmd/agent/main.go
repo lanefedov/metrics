@@ -14,7 +14,7 @@ func main() {
 	}
 
 	collector := agent.NewCollector(nil, nil)
-	reporter := agent.NewReporter(cfg.ServerAddress, nil)
+	reporter := agent.NewReporter(cfg.ServerAddress, cfg.Key, nil)
 	app := agent.New(cfg, collector, reporter, log.Default())
 
 	app.Run()

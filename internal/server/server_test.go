@@ -12,7 +12,7 @@ import (
 
 func TestNewHandlerRegistersPingRoute(t *testing.T) {
 	metricsService := service.NewMetricsService(storage.NewMemStorage())
-	handler := NewHandler(metricsService, func(context.Context) error {
+	handler := NewHandler(metricsService, "", func(context.Context) error {
 		return nil
 	})
 

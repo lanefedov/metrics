@@ -15,6 +15,7 @@ type Config struct {
 	PollInterval   time.Duration
 	ReportInterval time.Duration
 	StepInterval   time.Duration
+	Key            string
 }
 
 // DefaultConfig возвращает значения по умолчанию для HTTP-агента.

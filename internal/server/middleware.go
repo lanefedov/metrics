@@ -1,7 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"compress/gzip"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"strings"
@@ -229,4 +233,73 @@ func requestURI(r *http.Request) string {
 	}
 
 	return r.URL.RequestURI()
+}
+
+type hashResponseWriter struct {
+	http.ResponseWriter
+	key        string
+	buf        bytes.Buffer
+	statusCode int
+}
+
+func (w *hashResponseWriter) WriteHeader(code int) {
+	w.statusCode = code
+}
+
+func (w *hashResponseWriter) Write(p []byte) (int, error) {
+	if w.statusCode == 0 {
+		w.statusCode = http.StatusOK
+	}
+
+	return w.buf.Write(p)
+}
+
+func (w *hashResponseWriter) flush() {
+	body := w.buf.Bytes()
+
+	mac := hmac.New(sha256.New, []byte(w.key))
+	mac.Write(body)
+	w.ResponseWriter.Header().Set("HashSHA256", hex.EncodeToString(mac.Sum(nil)))
+
+	if w.statusCode != 0 {
+		w.ResponseWriter.WriteHeader(w.statusCode)
+	}
+
+	if len(body) > 0 {
+		_, _ = w.ResponseWriter.Write(body)
+	}
+}
+
+func hashMiddleware(key string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if key == "" {
+			return next
+		}
+
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			_ = r.Body.Close()
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if hashHeader := r.Header.Get("HashSHA256"); hashHeader != "" {
+				mac := hmac.New(sha256.New, []byte(key))
+				mac.Write(body)
+				expected := hex.EncodeToString(mac.Sum(nil))
+				if !hmac.Equal([]byte(hashHeader), []byte(expected)) {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+			}
+
+			cloned := r.Clone(r.Context())
+			cloned.Body = io.NopCloser(bytes.NewReader(body))
+
+			hrw := &hashResponseWriter{ResponseWriter: w, key: key}
+			next.ServeHTTP(hrw, cloned)
+			hrw.flush()
+		})
+	}
 }

@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,18 +21,20 @@ import (
 // Reporter отправляет метрики на сервер по HTTP.
 type Reporter struct {
 	client      *resty.Client
+	key         string
 	retryDelays []time.Duration
 	retrySleep  retry.SleepFunc
 }
 
 // NewReporter создаёт HTTP-отправитель метрик на базе resty-клиента.
-func NewReporter(baseURL string, client *resty.Client) *Reporter {
+func NewReporter(baseURL string, key string, client *resty.Client) *Reporter {
 	if client == nil {
 		client = resty.New()
 	}
 
 	return &Reporter{
 		client:      client.SetBaseURL(strings.TrimRight(normalizeBaseURL(baseURL), "/")),
+		key:         key,
 		retryDelays: retry.DefaultDelays,
 		retrySleep:  retry.Sleep,
 	}
@@ -46,6 +51,13 @@ func (r *Reporter) Report(metrics []Metric) error {
 		return err
 	}
 
+	var hashHeader string
+	if r.key != "" {
+		mac := hmac.New(sha256.New, []byte(r.key))
+		mac.Write(body)
+		hashHeader = hex.EncodeToString(mac.Sum(nil))
+	}
+
 	compressedBody, err := gzipData(body)
 	if err != nil {
 		return err
@@ -60,11 +72,14 @@ func (r *Reporter) Report(metrics []Metric) error {
 		},
 		func() error {
 			var requestErr error
-			resp, requestErr = r.client.R().
+			req := r.client.R().
 				SetHeader("Content-Type", "application/json").
 				SetHeader("Content-Encoding", "gzip").
-				SetBody(compressedBody).
-				Post("/updates/")
+				SetBody(compressedBody)
+			if hashHeader != "" {
+				req.SetHeader("HashSHA256", hashHeader)
+			}
+			resp, requestErr = req.Post("/updates/")
 			if requestErr != nil {
 				return fmt.Errorf("post metrics: %w", requestErr)
 			}

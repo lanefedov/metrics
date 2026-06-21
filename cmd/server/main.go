@@ -65,7 +65,7 @@ func main() {
 		}
 	}
 
-	h := server.NewHandler(metricsService, databasePing)
+	h := server.NewHandler(metricsService, cfg.key, databasePing)
 	httpServer := &http.Server{
 		Addr:              cfg.address,
 		Handler:           h,

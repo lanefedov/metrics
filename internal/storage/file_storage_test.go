@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,8 +11,9 @@ func TestMemStorageSaveAndLoadFile(t *testing.T) {
 	t.Parallel()
 
 	store := NewMemStorage()
-	store.AddCounter("requests", 42)
-	store.SetGauge("alloc", 123.45)
+	ctx := context.Background()
+	_ = store.AddCounter(ctx, "requests", 42)
+	_ = store.SetGauge(ctx, "alloc", 123.45)
 
 	path := filepath.Join(t.TempDir(), "metrics.json")
 	if err := store.SaveToFile(path); err != nil {
@@ -23,12 +25,18 @@ func TestMemStorageSaveAndLoadFile(t *testing.T) {
 		t.Fatalf("load metrics: %v", err)
 	}
 
-	counter, ok := restored.GetCounter("requests")
+	counter, ok, err := restored.GetCounter(ctx, "requests")
+	if err != nil {
+		t.Fatalf("get counter: %v", err)
+	}
 	if !ok || counter != 42 {
 		t.Fatalf("counter: got (%d, %t), want (42, true)", counter, ok)
 	}
 
-	gauge, ok := restored.GetGauge("alloc")
+	gauge, ok, err := restored.GetGauge(ctx, "alloc")
+	if err != nil {
+		t.Fatalf("get gauge: %v", err)
+	}
 	if !ok || gauge != 123.45 {
 		t.Fatalf("gauge: got (%v, %t), want (123.45, true)", gauge, ok)
 	}

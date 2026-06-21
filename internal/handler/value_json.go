@@ -34,7 +34,7 @@ func (h *JSONValueHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseMetric, err := h.service.GetMetric(metric)
+	responseMetric, err := h.service.GetMetric(r.Context(), metric)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidMetric):

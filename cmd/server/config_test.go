@@ -23,6 +23,12 @@ func TestLoadServerConfigUsesDefaultsWithoutEnv(t *testing.T) {
 	if !cfg.restore {
 		t.Fatal("restore: got false, want true")
 	}
+	if cfg.databaseDSN != "" {
+		t.Fatalf("database dsn: got %q, want empty", cfg.databaseDSN)
+	}
+	if cfg.storageMode != storageModeMemory {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeMemory)
+	}
 }
 
 func TestLoadServerConfigUsesEnvValue(t *testing.T) {
@@ -39,11 +45,14 @@ func TestLoadServerConfigUsesEnvValue(t *testing.T) {
 }
 
 func TestLoadServerConfigUsesEnvValues(t *testing.T) {
+	const dsn = "host=localhost port=5432 user=test dbname=metrics sslmode=disable"
+
 	cfg, err := loadServerConfigWithEnv(nil, envLookup(map[string]string{
 		addressEnvKey:         "localhost:9090",
 		storeIntervalEnvKey:   "1",
 		fileStoragePathEnvKey: "/tmp/server-db.json",
 		restoreEnvKey:         "true",
+		databaseDSNEnvKey:     dsn,
 	}))
 	if err != nil {
 		t.Fatalf("load server config: %v", err)
@@ -61,21 +70,32 @@ func TestLoadServerConfigUsesEnvValues(t *testing.T) {
 	if !cfg.restore {
 		t.Fatal("restore: got false, want true")
 	}
+	if cfg.databaseDSN != dsn {
+		t.Fatalf("database dsn: got %q, want %q", cfg.databaseDSN, dsn)
+	}
+	if cfg.storageMode != storageModeDatabase {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeDatabase)
+	}
 }
 
 func TestLoadServerConfigEnvOverridesFlag(t *testing.T) {
+	const flagDSN = "host=localhost port=5432 user=flag dbname=metrics sslmode=disable"
+	const envDSN = "host=localhost port=5432 user=env dbname=metrics sslmode=disable"
+
 	cfg, err := loadServerConfigWithEnv(
 		[]string{
 			"-a=127.0.0.1:9000",
 			"-i=10",
 			"-f=flag-db.json",
 			"-r=false",
+			"-d=" + flagDSN,
 		},
 		envLookup(map[string]string{
 			addressEnvKey:         "localhost:9090",
 			storeIntervalEnvKey:   "1",
 			fileStoragePathEnvKey: "env-db.json",
 			restoreEnvKey:         "true",
+			databaseDSNEnvKey:     envDSN,
 		}),
 	)
 	if err != nil {
@@ -94,14 +114,23 @@ func TestLoadServerConfigEnvOverridesFlag(t *testing.T) {
 	if !cfg.restore {
 		t.Fatal("restore: got false, want true")
 	}
+	if cfg.databaseDSN != envDSN {
+		t.Fatalf("database dsn: got %q, want %q", cfg.databaseDSN, envDSN)
+	}
+	if cfg.storageMode != storageModeDatabase {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeDatabase)
+	}
 }
 
 func TestLoadServerConfigUsesFlagsWithoutEnv(t *testing.T) {
+	const dsn = "host=localhost port=5432 user=flag dbname=metrics sslmode=disable"
+
 	cfg, err := loadServerConfigWithEnv([]string{
 		"-a=127.0.0.1:9000",
 		"-i=10",
 		"-f=flag-db.json",
 		"-r=false",
+		"-d=" + dsn,
 	}, emptyEnvLookup)
 	if err != nil {
 		t.Fatalf("load server config: %v", err)
@@ -118,6 +147,45 @@ func TestLoadServerConfigUsesFlagsWithoutEnv(t *testing.T) {
 	}
 	if cfg.restore {
 		t.Fatal("restore: got true, want false")
+	}
+	if cfg.databaseDSN != dsn {
+		t.Fatalf("database dsn: got %q, want %q", cfg.databaseDSN, dsn)
+	}
+	if cfg.storageMode != storageModeDatabase {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeDatabase)
+	}
+}
+
+func TestLoadServerConfigFallsBackToFileWhenDatabaseDSNIsEmpty(t *testing.T) {
+	cfg, err := loadServerConfigWithEnv(
+		[]string{
+			"-d=postgres://localhost/db",
+			"-f=/tmp/metrics.json",
+		},
+		envLookup(map[string]string{
+			databaseDSNEnvKey: "",
+		}),
+	)
+	if err != nil {
+		t.Fatalf("load server config: %v", err)
+	}
+
+	if cfg.storageMode != storageModeFile {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeFile)
+	}
+}
+
+func TestLoadServerConfigFallsBackToMemoryWhenDatabaseAndFileAreEmpty(t *testing.T) {
+	cfg, err := loadServerConfigWithEnv(nil, envLookup(map[string]string{
+		databaseDSNEnvKey:     "",
+		fileStoragePathEnvKey: "",
+	}))
+	if err != nil {
+		t.Fatalf("load server config: %v", err)
+	}
+
+	if cfg.storageMode != storageModeMemory {
+		t.Fatalf("storage mode: got %v, want %v", cfg.storageMode, storageModeMemory)
 	}
 }
 

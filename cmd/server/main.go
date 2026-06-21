@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lanefedov/metrics/internal/server"
 	"github.com/lanefedov/metrics/internal/service"
 	"github.com/lanefedov/metrics/internal/storage"
@@ -21,26 +22,50 @@ func main() {
 		log.Fatal(err)
 	}
 
-	store := storage.NewMemStorage()
-	if cfg.restore {
-		if err := store.LoadFromFile(cfg.fileStoragePath); err != nil {
-			log.Fatal(err)
-		}
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	metricsService := service.NewMetricsService(store)
-	if cfg.storeInterval == 0 {
-		metricsService = service.NewMetricsServiceWithAfterUpdate(store, func() error {
-			return store.SaveToFile(cfg.fileStoragePath)
-		})
-	} else {
-		startPeriodicSave(ctx, store, cfg.fileStoragePath, cfg.storeInterval)
+	var store storage.MetricsStorage
+	var fileStore *storage.MemStorage
+	var databasePing func(context.Context) error
+	switch cfg.storageMode {
+	case storageModeDatabase:
+		if err := runDatabaseMigrations(cfg.databaseDSN); err != nil {
+			log.Fatal(err)
+		}
+
+		pool, err := pgxpool.New(context.Background(), cfg.databaseDSN)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer pool.Close()
+
+		databasePing = pool.Ping
+		store = storage.NewPostgresStorage(pool)
+	case storageModeFile:
+		fileStore = storage.NewMemStorage()
+		if cfg.restore {
+			if err := fileStore.LoadFromFile(cfg.fileStoragePath); err != nil {
+				log.Fatal(err)
+			}
+		}
+		store = fileStore
+	default:
+		store = storage.NewMemStorage()
 	}
 
-	h := server.NewHandler(metricsService)
+	metricsService := service.NewMetricsService(store)
+	if fileStore != nil {
+		if cfg.storeInterval == 0 {
+			metricsService = service.NewMetricsServiceWithAfterUpdate(store, func() error {
+				return fileStore.SaveToFile(cfg.fileStoragePath)
+			})
+		} else {
+			startPeriodicSave(ctx, fileStore, cfg.fileStoragePath, cfg.storeInterval)
+		}
+	}
+
+	h := server.NewHandler(metricsService, databasePing)
 	httpServer := &http.Server{
 		Addr:              cfg.address,
 		Handler:           h,
@@ -66,7 +91,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := store.SaveToFile(cfg.fileStoragePath); err != nil {
+	if fileStore == nil {
+		return
+	}
+	if err := fileStore.SaveToFile(cfg.fileStoragePath); err != nil {
 		log.Printf("save metrics: %v", err)
 	}
 }

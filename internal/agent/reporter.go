@@ -3,18 +3,23 @@ package agent
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-resty/resty/v2"
 	models "github.com/lanefedov/metrics/internal/model"
+	"github.com/lanefedov/metrics/internal/retry"
 )
 
 // Reporter отправляет метрики на сервер по HTTP.
 type Reporter struct {
-	client *resty.Client
+	client      *resty.Client
+	retryDelays []time.Duration
+	retrySleep  retry.SleepFunc
 }
 
 // NewReporter создаёт HTTP-отправитель метрик на базе resty-клиента.
@@ -24,25 +29,19 @@ func NewReporter(baseURL string, client *resty.Client) *Reporter {
 	}
 
 	return &Reporter{
-		client: client.SetBaseURL(strings.TrimRight(normalizeBaseURL(baseURL), "/")),
+		client:      client.SetBaseURL(strings.TrimRight(normalizeBaseURL(baseURL), "/")),
+		retryDelays: retry.DefaultDelays,
+		retrySleep:  retry.Sleep,
 	}
 }
 
-// Report поочерёдно отправляет все переданные метрики.
+// Report отправляет все переданные метрики одним батчем.
 func (r *Reporter) Report(metrics []Metric) error {
-	var reportErr error
-
-	for _, metric := range metrics {
-		if err := r.sendMetric(metric); err != nil {
-			reportErr = errors.Join(reportErr, err)
-		}
+	if len(metrics) == 0 {
+		return nil
 	}
 
-	return reportErr
-}
-
-func (r *Reporter) sendMetric(metric Metric) error {
-	body, err := json.Marshal(metricToModel(metric))
+	body, err := json.Marshal(metricsToModels(metrics))
 	if err != nil {
 		return err
 	}
@@ -52,20 +51,44 @@ func (r *Reporter) sendMetric(metric Metric) error {
 		return err
 	}
 
-	resp, err := r.client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("Content-Encoding", "gzip").
-		SetBody(compressedBody).
-		Post("/update/")
-	if err != nil {
+	var resp *resty.Response
+	if err := retry.DoWithSleeper(
+		context.Background(),
+		r.retryDelays,
+		func(error) bool {
+			return true
+		},
+		func() error {
+			var requestErr error
+			resp, requestErr = r.client.R().
+				SetHeader("Content-Type", "application/json").
+				SetHeader("Content-Encoding", "gzip").
+				SetBody(compressedBody).
+				Post("/updates/")
+			if requestErr != nil {
+				return fmt.Errorf("post metrics: %w", requestErr)
+			}
+			return nil
+		},
+		r.retrySleep,
+	); err != nil {
 		return err
 	}
 
-	if resp.StatusCode() != 200 {
+	if resp.StatusCode() != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode())
 	}
 
 	return nil
+}
+
+func metricsToModels(metrics []Metric) []models.Metrics {
+	requestMetrics := make([]models.Metrics, 0, len(metrics))
+	for _, metric := range metrics {
+		requestMetrics = append(requestMetrics, metricToModel(metric))
+	}
+
+	return requestMetrics
 }
 
 func metricToModel(metric Metric) models.Metrics {

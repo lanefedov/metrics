@@ -43,7 +43,12 @@ func NewListHandler(metricsService *service.MetricsService) *ListHandler {
 
 // ServeHTTP реализует net/http.Handler.
 func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	metrics := h.service.ListMetrics()
+	metrics, err := h.service.ListMetrics(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
 	entries := make([]metricEntry, 0, len(metrics))
 
 	for _, metric := range metrics {

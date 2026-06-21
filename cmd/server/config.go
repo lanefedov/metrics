@@ -12,6 +12,7 @@ const (
 	storeIntervalEnvKey   = "STORE_INTERVAL"
 	fileStoragePathEnvKey = "FILE_STORAGE_PATH"
 	restoreEnvKey         = "RESTORE"
+	databaseDSNEnvKey     = "DATABASE_DSN"
 )
 
 func loadServerConfig(args []string) (serverConfig, error) {
@@ -38,6 +39,7 @@ func loadServerConfigWithEnv(args []string, lookupEnv func(string) (string, bool
 
 	if value, ok := lookupEnv(fileStoragePathEnvKey); ok {
 		cfg.fileStoragePath = value
+		cfg.fileStoragePathProvided = true
 	}
 
 	if value, ok := lookupEnv(restoreEnvKey); ok {
@@ -47,6 +49,13 @@ func loadServerConfigWithEnv(args []string, lookupEnv func(string) (string, bool
 		}
 		cfg.restore = restore
 	}
+
+	if value, ok := lookupEnv(databaseDSNEnvKey); ok {
+		cfg.databaseDSN = value
+		cfg.databaseDSNProvided = true
+	}
+
+	cfg.resolveStorageMode()
 
 	return cfg, nil
 }

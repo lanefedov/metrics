@@ -12,14 +12,12 @@ import (
 // GopsutilCollector собирает системные метрики через gopsutil.
 type GopsutilCollector struct {
 	mu      sync.RWMutex
-	metrics map[string]Metric
+	metrics []Metric
 }
 
 // NewGopsutilCollector создаёт сборщик системных метрик (память и CPU).
 func NewGopsutilCollector() *GopsutilCollector {
-	return &GopsutilCollector{
-		metrics: make(map[string]Metric),
-	}
+	return &GopsutilCollector{}
 }
 
 // Collect обновляет снимок системных метрик.
@@ -30,14 +28,22 @@ func (g *GopsutilCollector) Collect() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	g.metrics = g.metrics[:0]
+
 	if memErr == nil {
-		g.setGauge("TotalMemory", float64(vmStat.Total))
-		g.setGauge("FreeMemory", float64(vmStat.Free))
+		g.metrics = append(g.metrics,
+			Metric{Name: "TotalMemory", Type: models.Gauge, GaugeValue: float64(vmStat.Total)},
+			Metric{Name: "FreeMemory", Type: models.Gauge, GaugeValue: float64(vmStat.Free)},
+		)
 	}
 
 	if cpuErr == nil {
 		for i, percent := range cpuPercents {
-			g.setGauge(fmt.Sprintf("CPUutilization%d", i+1), percent)
+			g.metrics = append(g.metrics, Metric{
+				Name:       fmt.Sprintf("CPUutilization%d", i+1),
+				Type:       models.Gauge,
+				GaugeValue: percent,
+			})
 		}
 	}
 }
@@ -47,17 +53,7 @@ func (g *GopsutilCollector) Snapshot() []Metric {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	result := make([]Metric, 0, len(g.metrics))
-	for _, m := range g.metrics {
-		result = append(result, m)
-	}
+	result := make([]Metric, len(g.metrics))
+	copy(result, g.metrics)
 	return result
-}
-
-func (g *GopsutilCollector) setGauge(name string, value float64) {
-	g.metrics[name] = Metric{
-		Name:       name,
-		Type:       models.Gauge,
-		GaugeValue: value,
-	}
 }

@@ -96,17 +96,15 @@ func requestDecompressionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		cloned := r.Clone(r.Context())
-		cloned.Body = &gzipReadCloser{
+		r.Body = &gzipReadCloser{
 			ReadCloser: gzipReader,
 			body:       r.Body,
 		}
-		cloned.Header = r.Header.Clone()
-		cloned.Header.Del("Content-Encoding")
-		cloned.Header.Del("Content-Length")
-		cloned.ContentLength = -1
+		r.Header.Del("Content-Encoding")
+		r.Header.Del("Content-Length")
+		r.ContentLength = -1
 
-		next.ServeHTTP(w, cloned)
+		next.ServeHTTP(w, r)
 	})
 }
 

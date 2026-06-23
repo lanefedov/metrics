@@ -55,7 +55,7 @@ func New(cfg Config, collector collector, gopsCollector collector, reporter repo
 // Run запускает агент: две горутины сбора метрик и worker pool отправки.
 // Блокируется до отмены ctx.
 func (a *Agent) Run(ctx context.Context) {
-	jobs := make(chan []Metric, a.cfg.RateLimit)
+	jobs := make(chan []Metric)
 
 	var workerWG sync.WaitGroup
 	for range a.cfg.RateLimit {
@@ -86,8 +86,7 @@ func (a *Agent) Run(ctx context.Context) {
 			metrics := append(a.collector.Snapshot(), a.gopsCollector.Snapshot()...)
 			select {
 			case jobs <- metrics:
-			default:
-				a.logger.Println("все воркеры заняты, отчёт пропущен")
+			case <-ctx.Done():
 			}
 		}
 	}

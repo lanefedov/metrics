@@ -20,6 +20,9 @@ func TestParseAgentFlagsUsesDefaults(t *testing.T) {
 	if cfg.PollInterval != 2*time.Second {
 		t.Fatalf("poll interval: got %s, want %s", cfg.PollInterval, 2*time.Second)
 	}
+	if cfg.RateLimit != 1 {
+		t.Fatalf("rate limit: got %d, want 1", cfg.RateLimit)
+	}
 }
 
 func TestParseAgentFlagsOverridesValues(t *testing.T) {
@@ -27,6 +30,7 @@ func TestParseAgentFlagsOverridesValues(t *testing.T) {
 		"-a=127.0.0.1:9000",
 		"-r=15",
 		"-p=4",
+		"-l=3",
 	})
 	if err != nil {
 		t.Fatalf("parse agent flags: %v", err)
@@ -40,6 +44,9 @@ func TestParseAgentFlagsOverridesValues(t *testing.T) {
 	}
 	if cfg.PollInterval != 4*time.Second {
 		t.Fatalf("poll interval: got %s, want %s", cfg.PollInterval, 4*time.Second)
+	}
+	if cfg.RateLimit != 3 {
+		t.Fatalf("rate limit: got %d, want 3", cfg.RateLimit)
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -256,5 +255,5 @@ func isRetriablePostgresError(err error) bool {
 }
 
 func isPostgresConnectionExceptionCode(code string) bool {
-	return code == pgerrcode.ConnectionException || strings.HasPrefix(code, "08")
+	return strings.HasPrefix(code, "08")
 }

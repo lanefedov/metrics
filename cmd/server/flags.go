@@ -31,6 +31,7 @@ type serverConfig struct {
 	databaseDSN             string
 	databaseDSNProvided     bool
 	storageMode             storageMode
+	key                     string
 }
 
 func parseServerFlags(args []string) (serverConfig, error) {
@@ -50,6 +51,7 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	fs.StringVar(&cfg.fileStoragePath, "f", defaultStoreFilePath, "file storage path")
 	fs.BoolVar(&cfg.restore, "r", true, "restore metrics from file on startup")
 	fs.StringVar(&cfg.databaseDSN, "d", "", "database data source name")
+	fs.StringVar(&cfg.key, "k", "", "signing key")
 
 	if err := fs.Parse(args); err != nil {
 		return serverConfig{}, err

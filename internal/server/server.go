@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"os"
 
@@ -12,18 +11,14 @@ import (
 )
 
 // NewHandler создаёт дерево HTTP-обработчиков сервера метрик.
-func NewHandler(metricsService *service.MetricsService, databasePing ...func(context.Context) error) http.Handler {
+func NewHandler(metricsService *service.MetricsService, key string, ping handler.PingFunc) http.Handler {
 	r := chi.NewRouter()
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
-
-	var ping handler.PingFunc
-	if len(databasePing) > 0 {
-		ping = databasePing[0]
-	}
 
 	r.Use(loggingMiddleware(logger))
 	r.Use(requestDecompressionMiddleware)
 	r.Use(responseCompressionMiddleware)
+	r.Use(hashMiddleware(key))
 	r.Get("/ping", handler.NewPingHandler(ping).ServeHTTP)
 	r.Post("/update", handler.NewJSONUpdateHandler(metricsService).ServeHTTP)
 	r.Post("/update/", handler.NewJSONUpdateHandler(metricsService).ServeHTTP)
